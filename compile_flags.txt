@@ -1,0 +1,9 @@
+-xc++
+-DDEVELOPMENT
+-Ilib/vst3sdk
+-Ilib/vst3sdk/pluginterfaces/vst/vsttypes.h
+-Ilib/vst3sdk/vstgui4
+-Ilib
+-Isrc
+-std=c++20
+-DBEATRICE_ONLY_FOR_LINTER_DO_NOT_COMPILE_WITH_THIS

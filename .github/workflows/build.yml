@@ -1,0 +1,43 @@
+name: build
+
+on:
+  push:
+    branches: "**"
+    tags: "v*.*.*"
+  pull_request:
+    branches: "**"
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Download beatrice.lib
+        run: curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/beta.1/beta.1/beatrice.lib
+
+      - name: Configure CMake (with dev version suffix)
+        if: startsWith(github.ref, 'refs/heads/')
+        run: cmake -G "Visual Studio 17 2022" -A x64 -B ${{github.workspace}}/build/vst -DSMTG_USE_STATIC_CRT=ON -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBEATRICE_DEV_VERSION=ON
+
+      - name: Configure CMake (without dev version suffix)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cmake -G "Visual Studio 17 2022" -A x64 -B ${{github.workspace}}/build/vst -DSMTG_USE_STATIC_CRT=ON -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBEATRICE_DEV_VERSION=OFF
+
+      - name: Build
+        run: cmake --build ${{github.workspace}}/build/vst --config ${{env.BUILD_TYPE}} --target distribution
+
+      - name: Upload VST
+        uses: actions/upload-artifact@v4
+        with:
+          name: beatrice
+          path: |
+            ${{github.workspace}}/build/vst/beatrice_*/
+            !${{github.workspace}}/build/vst/beatrice_*.dir

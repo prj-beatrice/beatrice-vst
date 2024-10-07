@@ -1,0 +1,54 @@
+// Copyright (c) 2024 Project Beatrice
+
+#ifndef BEATRICE_COMMON_PARAMETER_STATE_H_
+#define BEATRICE_COMMON_PARAMETER_STATE_H_
+
+#include <cassert>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <variant>
+
+#include "common/parameter_schema.h"
+
+namespace beatrice::common {
+
+// 信号処理オブジェクトの状態の保存や復元を可能にするために、
+// モデルのファイルパス等も含め信号処理オブジェクトに対して
+// 外部から操作されたあらゆるパラメータの状態を保持するクラス。
+class ParameterState {
+ public:
+  using Value = std::variant<int, double, std::unique_ptr<std::u8string>>;
+  ParameterState() = default;
+  ParameterState(const ParameterState&);
+  auto operator=(const ParameterState&) -> ParameterState&;
+
+  void SetDefaultValues(const ParameterSchema& schema);
+  template <typename T>
+  inline void SetValue(const int group_id, const int param_id, const T value)
+    requires(sizeof(T) <= 8)
+  {  // NOLINT(whitespace/braces)
+    states_.insert_or_assign(std::make_tuple(group_id, param_id), value);
+  }
+  template <typename T>
+  inline void SetValue(const int group_id, const int param_id, const T& value)
+    requires(sizeof(T) > 8)
+  {  // NOLINT(whitespace/braces)
+    states_.insert_or_assign(std::make_tuple(group_id, param_id),
+                             std::make_unique<T>(value));
+  }
+  [[nodiscard]] auto GetValue(int group_id, int param_id) const
+      -> const ParameterState::Value&;
+  auto Read(std::istream& is) -> int;
+  auto ReadOrSetDefault(std::istream& is, const ParameterSchema& schema) -> int;
+  auto Write(std::ostream& os) const -> int;
+
+ private:
+  std::map<std::tuple<int, int>, Value> states_;
+};
+
+}  // namespace beatrice::common
+
+#endif  // BEATRICE_COMMON_PARAMETER_STATE_H_

@@ -1,0 +1,32 @@
+Beatrice (VST®) のプログラムには、以下の OSS が含まれます。
+
+VST SDK - pluginterfaces
+Proprietary Steinberg VST3 License
+https://github.com/steinbergmedia/vst3sdk/blob/master/LICENSE.txt
+
+VST SDK - base, public_sdk, VSTGUI
+BSD-3-Clause License
+https://github.com/steinbergmedia/vst3_base/blob/master/LICENSE.txt
+https://github.com/steinbergmedia/vst3_public_sdk/blob/master/LICENSE.txt
+https://github.com/steinbergmedia/vstgui/blob/develop/LICENSE
+
+PocketFFT
+BSD-3-Clause License
+https://gitlab.mpcdf.mpg.de/mtr/pocketfft/-/blob/cpp/LICENSE.md
+
+fmath
+BSD-3-Clause License
+https://github.com/herumi/fmath#license
+
+toml11
+MIT License
+https://github.com/ToruNiina/toml11/blob/main/LICENSE
+
+---
+
+Beatrice (VST®) のプログラムには非公開の推論ライブラリが含まれ、Project Beatrice に
+個別の許諾を得た場合を除き、各国の法で認められた範囲を超えてこれを利用することはできません。
+
+---
+
+VST は Steinberg Media Technologies GmbH の登録商標です。(国際登録第 0946646 号)

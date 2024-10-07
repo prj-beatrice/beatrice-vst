@@ -1,0 +1,52 @@
+// Copyright (c) 2024 Project Beatrice
+
+#ifndef BEATRICE_VST_METADATA_H_
+#define BEATRICE_VST_METADATA_H_
+
+// clang-format off
+#define MAJOR_VERSION          @major_version@
+#define MINOR_VERSION          @minor_version@
+#define PATCH_VERSION          @patch_version@
+#define BUILD_NUMBER           @build_number@
+#define INTEGER_VERSION        MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION, BUILD_NUMBER
+#define FULL_VERSION_STR       "@full_version_str@"
+
+#define stringPluginName       "Beatrice_" FULL_VERSION_STR
+#define stringOriginalFilename "beatrice_" FULL_VERSION_STR ".vst3"
+#if SMTG_PLATFORM_64
+#define stringFileDescription  stringPluginName " VST3-SDK (64Bit)"
+#else
+#define stringFileDescription  stringPluginName " VST3-SDK"
+#endif
+#define stringCompanyWeb       "prj-beatrice.com"
+#define stringCompanyEmail     "167534685+prj-beatrice@users.noreply.github.com"
+#define stringCompanyName      "Project Beatrice"
+#define stringLegalCopyright   "Copyright 2022-2024 Project Beatrice"
+#define stringLegalTrademarks  "VST is a trademark of Steinberg Media Technologies GmbH"
+
+#define BACKGROUND_IMAGE       "@background_image@"
+// clang-format on
+
+#ifndef RC_INVOKED
+
+#include "vst3sdk/pluginterfaces/base/funknown.h"
+
+namespace beatrice::vst {
+
+#ifdef BEATRICE_ONLY_FOR_LINTER_DO_NOT_COMPILE_WITH_THIS
+static const Steinberg::FUID kProcessorUID(0x00000000, 0x00000000, 0x00000000,
+                                           0x00000000);
+static const Steinberg::FUID kControllerUID(0x00000000, 0x00000000, 0x00000000,
+                                            0x00000000);
+#else
+// clang-format off
+static const Steinberg::FUID kProcessorUID(@processor_uid@);
+static const Steinberg::FUID kControllerUID(@controller_uid@);
+// clang-format on
+#endif
+
+}  // namespace beatrice::vst
+
+#endif  // RC_INVOKED
+
+#endif  // BEATRICE_VST_METADATA_H_

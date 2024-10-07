@@ -1,0 +1,6 @@
+[submodule "lib/vst3sdk"]
+	path = lib/vst3sdk
+	url = git@github.com:steinbergmedia/vst3sdk.git
+[submodule "lib/toml11"]
+	path = lib/toml11
+	url = git@github.com:ToruNiina/toml11.git
