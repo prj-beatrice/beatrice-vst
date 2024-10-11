@@ -7,7 +7,7 @@
 #include <cassert>
 #include <cmath>
 
-#include "pluginterfaces/vst/ivstunits.h"
+#include "vst3sdk/pluginterfaces/vst/ivstunits.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
 

@@ -6,8 +6,8 @@
 #include <map>
 #include <mutex>  // NOLINT(build/c++11)
 
-#include "pluginterfaces/base/ibstream.h"
-#include "pluginterfaces/vst/ivstaudioprocessor.h"
+#include "vst3sdk/pluginterfaces/base/ibstream.h"
+#include "vst3sdk/pluginterfaces/vst/ivstaudioprocessor.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/vstaudioeffect.h"
 

@@ -5,8 +5,8 @@
 
 #include <vector>
 
-#include "pluginterfaces/base/ftypes.h"
-#include "pluginterfaces/base/ibstream.h"
+#include "vst3sdk/pluginterfaces/base/ftypes.h"
+#include "vst3sdk/pluginterfaces/base/ibstream.h"
 #include "vst3sdk/public.sdk/source/vst/vsteditcontroller.h"
 
 // Beatrice
