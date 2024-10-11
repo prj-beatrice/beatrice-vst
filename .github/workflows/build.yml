@@ -24,7 +24,7 @@ jobs:
         run: curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/beta.1/beta.1/beatrice.lib
 
       - name: Configure CMake (with dev version suffix)
-        if: startsWith(github.ref, 'refs/heads/')
+        if: startsWith(github.ref, 'refs/heads/') || startsWith(github.ref, 'refs/pull/')
         run: cmake -G "Visual Studio 17 2022" -A x64 -B ${{github.workspace}}/build/vst -DSMTG_USE_STATIC_CRT=ON -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBEATRICE_DEV_VERSION=ON
 
       - name: Configure CMake (without dev version suffix)
