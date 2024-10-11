@@ -10,9 +10,9 @@
 #include <cstring>
 #include <memory>
 
-#include "pluginterfaces/vst/vsttypes.h"
-#include "public.sdk/source/vst/vstparameters.h"
+#include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
+#include "vst3sdk/public.sdk/source/vst/vstparameters.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/coptionmenu.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cviewcontainer.h"

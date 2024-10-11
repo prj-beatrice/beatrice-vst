@@ -235,7 +235,7 @@ class FileSelector : public CTextLabel {
         const auto file = std::filesystem::path(file_u8string);
         if (std::filesystem::exists(file) &&
             std::filesystem::is_regular_file(file)) {
-          SetPath(file_char);
+          SetPath(file);
           // Editor に通知
           valueChanged();
         }

@@ -7,13 +7,13 @@
 #include <optional>
 #include <vector>
 
-#include "pluginterfaces/vst/vsttypes.h"
+#include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/vstguieditor.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cview.h"
 
 // Beatrice
 #include "common/model_config.h"
 #include "vst/controls.h"
-#include "vstgui/lib/cview.h"
 
 namespace beatrice::vst {
 
