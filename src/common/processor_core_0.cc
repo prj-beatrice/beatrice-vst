@@ -1,7 +1,5 @@
 // Copyright (c) 2024 Project Beatrice
 
-#pragma once
-
 #include "common/processor_core_0.h"
 
 #include <cassert>
