@@ -25,11 +25,11 @@ auto ProcessorCore0::Process(const float* const input, float* const output,
   if (target_speaker_ < 0) {
     goto fail;
   }
-  if (target_speaker_ >= speaker_embeddings_.size() /
+  if (target_speaker_ >= static_cast<int>(speaker_embeddings_.size()) /
                              BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS) {
     goto fail;
   }
-  if (formant_shift_embeddings_.size() !=
+  if (static_cast<int>(formant_shift_embeddings_.size()) !=
       9 * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS) {
     goto fail;
   }
