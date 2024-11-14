@@ -25,7 +25,6 @@
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
-#include "vst/constants.h"
 #include "vst/parameter.h"
 
 namespace beatrice::vst {
@@ -155,8 +154,8 @@ class Slider : public CHorizontalSlider {
     auto text_rect = getViewSize();
     // text_rect.inset(textInset.x, textInset.y);
 
-    const auto& param = common::kSchema.GetParameter(tag / kParamsPerGroup,
-                                                     tag % kParamsPerGroup);
+    const auto& param =
+        common::kSchema.GetParameter(static_cast<common::ParameterID>(tag));
     const auto denormalized_value = Denormalize(
         std::get<common::NumberParameter>(param), getValueNormalized());
 

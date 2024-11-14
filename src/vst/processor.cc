@@ -11,8 +11,14 @@
 #include "vst3sdk/pluginterfaces/vst/vstspeaker.h"
 
 // Beatrice
-#include "vst/constants.h"
+#include "common/parameter_schema.h"
 #include "vst/parameter.h"
+
+#ifdef BEATRICE_ONLY_FOR_LINTER_DO_NOT_COMPILE_WITH_THIS
+#include "vst/metadata.h.in"
+#else
+#include "metadata.h"  // NOLINT(build/include_subdir)
+#endif
 
 namespace beatrice::vst {
 
@@ -128,20 +134,18 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
   }
 
   for (const auto [vst_param_id, value] : unreflected_params_) {
-    const auto group_id = static_cast<int>(vst_param_id) / kParamsPerGroup;
-    const auto param_id = static_cast<int>(vst_param_id) % kParamsPerGroup;
-    const auto& param = common::kSchema.GetParameter(group_id, param_id);
+    const auto param_id = static_cast<common::ParameterID>(vst_param_id);
+    const auto& param = common::kSchema.GetParameter(param_id);
     if (const auto* const num_param =
             std::get_if<common::NumberParameter>(&param)) {
       const auto denormalized_value = Denormalize(*num_param, value);
-      vc_core_.SetParameter(group_id, param_id, denormalized_value);
+      vc_core_.SetParameter(param_id, denormalized_value);
       assert(denormalized_value ==
-             std::get<double>(
-                 vc_core_.GetParameterState().GetValue(group_id, param_id)));
+             std::get<double>(vc_core_.GetParameterState().GetValue(param_id)));
     } else if (const auto* const list_param =
                    std::get_if<common::ListParameter>(&param)) {
       const auto denormalized_value = Denormalize(*list_param, value);
-      vc_core_.SetParameter(group_id, param_id, denormalized_value);
+      vc_core_.SetParameter(param_id, denormalized_value);
     }
   }
   unreflected_params_.clear();
@@ -268,9 +272,8 @@ auto PLUGIN_API Processor::notify(IMessage* const message) -> tresult {
     auto value = std::u8string();
     value.resize(siz);
     std::memcpy(value.data(), data, siz);
-    const auto group_id = static_cast<int>(vst_param_id) / kParamsPerGroup;
-    const auto param_id = static_cast<int>(vst_param_id) % kParamsPerGroup;
-    vc_core_.SetParameter(group_id, param_id, value);
+    const auto param_id = static_cast<common::ParameterID>(vst_param_id);
+    vc_core_.SetParameter(param_id, value);
     return kResultTrue;
   }
   return AudioEffect::notify(message);

@@ -10,6 +10,8 @@
 #include <variant>
 #include <vector>
 
+#include "common/model_config.h"
+
 namespace beatrice::common {
 
 class ProcessorProxy;
@@ -34,6 +36,21 @@ enum : int {
   // kIsBypass = 1 << 16
 };
 }  // namespace parameter_flag
+
+enum class ParameterID : int {
+  kNull = -1,
+  // kByPass = 0,
+  kModel = 1,
+  kVoice = 2,
+  kFormantShift = 3,
+  kPitchShift = 4,
+  kAverageSourcePitch = 5,
+  kLock = 6,
+  kInputGain = 7,
+  kOutputGain = 8,
+  kAverageTargetPitchBase = 100,
+  kSentinel = kAverageTargetPitchBase + kMaxNSpeakers,
+};
 
 class NumberParameter {
  public:
@@ -185,66 +202,34 @@ class StringParameter {
 using ParameterVariant =
     std::variant<NumberParameter, ListParameter, StringParameter>;
 
-class ParameterGroup {
+// 直接コントロールできるパラメータは少なくともすべて含む
+class ParameterSchema {
  public:
-  inline explicit ParameterGroup(std::string name) : name_(std::move(name)) {}
-  inline ParameterGroup(
-      std::string name,
-      const std::vector<std::tuple<int, ParameterVariant>>& parameters)
-      : name_(std::move(name)) {
+  inline ParameterSchema() = default;
+  inline explicit ParameterSchema(
+      const std::vector<std::tuple<ParameterID, ParameterVariant>>&
+          parameters) {
     for (const auto& [param_id, param] : parameters) {
       AddParameter(param_id, param);
     }
   }
-  inline void AddParameter(const int param_id,
+  inline void AddParameter(const ParameterID param_id,
                            const ParameterVariant& parameter) {
     parameters_.insert({param_id, parameter});
   }
-  [[nodiscard]] inline auto GetParameter(const int param_id) const
+  [[nodiscard]] inline auto GetParameter(const ParameterID param_id) const
       -> const ParameterVariant& {
     return parameters_.at(param_id);
   }
   // NOLINTBEGIN(readability-identifier-naming)
   [[nodiscard]] inline auto begin() const { return parameters_.begin(); }
   [[nodiscard]] inline auto end() const { return parameters_.end(); }
+  [[nodiscard]] inline auto cbegin() const { return parameters_.cbegin(); }
+  [[nodiscard]] inline auto cend() const { return parameters_.cend(); }
   // NOLINTEND(readability-identifier-naming)
 
  private:
-  std::string name_;
-  std::map<int, ParameterVariant> parameters_;
-};
-
-// 直接コントロールできるパラメータは少なくともすべて含む
-class ParameterSchema {
- public:
-  inline ParameterSchema() = default;
-  inline explicit ParameterSchema(
-      const std::vector<std::tuple<int, ParameterGroup>>& groups) {
-    for (const auto& [group_id, group] : groups) {
-      AddParameterGroup(group_id, group);
-    }
-  }
-  inline void AddParameterGroup(const int group_id,
-                                const ParameterGroup& group) {
-    groups_.insert({group_id, group});
-  }
-  [[nodiscard]] inline auto GetParameterGroup(const int group_id) const
-      -> const ParameterGroup& {
-    return groups_.at(group_id);
-  }
-  [[nodiscard]] inline auto GetParameter(
-      const int group_id, const int param_id) const -> const ParameterVariant& {
-    return groups_.at(group_id).GetParameter(param_id);
-  }
-  // NOLINTBEGIN(readability-identifier-naming)
-  [[nodiscard]] inline auto begin() const { return groups_.begin(); }
-  [[nodiscard]] inline auto end() const { return groups_.end(); }
-  [[nodiscard]] inline auto cbegin() const { return groups_.cbegin(); }
-  [[nodiscard]] inline auto cend() const { return groups_.cend(); }
-  // NOLINTEND(readability-identifier-naming)
-
- private:
-  std::map<int, ParameterGroup> groups_;
+  std::map<ParameterID, ParameterVariant> parameters_;
 };
 
 extern const ParameterSchema kSchema;

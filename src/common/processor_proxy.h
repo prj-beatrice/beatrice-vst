@@ -5,6 +5,7 @@
 
 #include <memory>
 
+#include "common/parameter_schema.h"
 #include "common/parameter_state.h"
 #include "common/processor_core.h"
 #include "common/processor_core_0.h"
@@ -33,13 +34,11 @@ class ProcessorProxy {
     sample_rate_ = new_sample_rate;
     core_->SetSampleRate(sample_rate_);
   }
-  [[nodiscard]] auto GetParameter(int group_id, int param_id) const -> const
-      auto&;
+  [[nodiscard]] auto GetParameter(ParameterID param_id) const -> const auto&;
   template <typename T>
-  inline void SetParameter(const int group_id, const int param_id,
-                           const T& value) {
-    parameter_state_.SetValue(group_id, param_id, value);
-    SyncParameter(group_id, param_id);
+  inline void SetParameter(const ParameterID param_id, const T& value) {
+    parameter_state_.SetValue(param_id, value);
+    SyncParameter(param_id);
   }
   inline auto LoadModel(const std::filesystem::path& file) -> int {
     if (!std::filesystem::exists(file)) {
@@ -63,7 +62,7 @@ class ProcessorProxy {
     } catch (const std::exception& e) {
       return 1;
     }
-    SyncAllParameters(0, 1);
+    SyncAllParameters(ParameterID::kModel);
     return 0;
   }
   auto Read(std::istream& is) -> int;
@@ -82,8 +81,8 @@ class ProcessorProxy {
   // parameter_state_ の値を core_ に反映させる。
   // 原則として state と core は同期されており、
   // 外部から Sync を行う必要はない。
-  void SyncParameter(int group_id, int param_id);
-  void SyncAllParameters(int ignore_group_id = -1, int ignore_param_id = -1);
+  void SyncParameter(ParameterID param_id);
+  void SyncAllParameters(ParameterID ignore_param_id = ParameterID::kNull);
 };
 }  // namespace beatrice::common
 
