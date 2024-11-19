@@ -15,7 +15,7 @@ class ControllerCore {
   ParameterState parameter_state_;
   std::vector<ParameterID> updated_parameters_;
 
-  inline auto Read(std::istream& is) -> int {
+  inline auto Read(std::istream& is) -> ErrorCode {
     return parameter_state_.ReadOrSetDefault(is, kSchema);
   }
   inline void SetDefaultValues() { parameter_state_.SetDefaultValues(kSchema); }

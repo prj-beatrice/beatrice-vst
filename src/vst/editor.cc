@@ -20,6 +20,7 @@
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
+#include "common/error.h"
 #include "common/parameter_schema.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
@@ -342,7 +343,8 @@ void Editor::valueChanged(CControl* const pControl) {
       return;
     }
     normalized_value = static_cast<float>(Normalize(*num_param, plain_value));
-    num_param->ControllerSetValue(core, plain_value);
+    const auto error_code = num_param->ControllerSetValue(core, plain_value);
+    assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<COptionMenu*>(pControl)) {
     const auto* const list_param = std::get_if<common::ListParameter>(&param);
@@ -353,14 +355,17 @@ void Editor::valueChanged(CControl* const pControl) {
       return;
     }
     const auto normalized_value = Normalize(*list_param, plain_value);
-    list_param->ControllerSetValue(core, plain_value);
+    const auto error_code = list_param->ControllerSetValue(core, plain_value);
+    assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<FileSelector*>(pControl)) {
     const auto* const str_param = std::get_if<common::StringParameter>(&param);
     assert(str_param);
     const auto file = control->GetPath();
-    str_param->ControllerSetValue(core, file.u8string());
-    controller->SetStringParameter(vst_param_id, file.u8string());
+    auto error_code = str_param->ControllerSetValue(core, file.u8string());
+    assert(error_code == common::ErrorCode::kSuccess);
+    error_code = controller->SetStringParameter(vst_param_id, file.u8string());
+    assert(error_code == common::ErrorCode::kSuccess);
   } else {
     assert(false);
   }
@@ -394,6 +399,8 @@ void Editor::valueChanged(CControl* const pControl) {
 //                            const char* const message) -> CMessageResult{
 //     return VSTGUIEditor::notify(sender, message);
 // }
+
+// 以下は open() からのみ呼ばれるメンバ関数
 
 void Editor::BeginColumn(Context& context, const int width,
                          const CColor& back_color) {

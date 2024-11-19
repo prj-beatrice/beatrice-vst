@@ -5,6 +5,8 @@
 
 #include <memory>
 
+#include "common/error.h"
+#include "common/model_config.h"
 #include "common/parameter_schema.h"
 #include "common/parameter_state.h"
 #include "common/processor_core.h"
@@ -25,24 +27,26 @@ class ProcessorProxy {
   }
   inline explicit ProcessorProxy(const ParameterState& parameter_state)
       : sample_rate_(), parameter_state_(parameter_state) {
-    SyncAllParameters();
+    auto error_code = SyncAllParameters();
+    assert(error_code == ErrorCode::kSuccess);
   }
   [[nodiscard]] inline auto GetSampleRate() const -> double {
     return sample_rate_;
   }
-  inline void SetSampleRate(const double new_sample_rate) {
+  inline auto SetSampleRate(const double new_sample_rate) -> ErrorCode {
     sample_rate_ = new_sample_rate;
-    core_->SetSampleRate(sample_rate_);
+    return core_->SetSampleRate(sample_rate_);
   }
   [[nodiscard]] auto GetParameter(ParameterID param_id) const -> const auto&;
   template <typename T>
-  inline void SetParameter(const ParameterID param_id, const T& value) {
+  inline auto SetParameter(const ParameterID param_id,
+                           const T& value) -> ErrorCode {
     parameter_state_.SetValue(param_id, value);
-    SyncParameter(param_id);
+    return SyncParameter(param_id);
   }
-  inline auto LoadModel(const std::filesystem::path& file) -> int {
+  inline auto LoadModel(const std::filesystem::path& file) -> ErrorCode {
     if (!std::filesystem::exists(file)) {
-      return 1;
+      return ErrorCode::kFileOpenError;
     }
     try {
       const auto toml_data = toml::parse(file);
@@ -58,15 +62,21 @@ class ProcessorProxy {
           core_ = std::make_unique<ProcessorCoreUnloaded>();
           break;
       }
-      core_->LoadModel(model_config, file);
+      if (const auto err = core_->LoadModel(model_config, file);
+          err != ErrorCode::kSuccess) {
+        return err;
+      }
+    } catch (const toml::file_io_error) {
+      return ErrorCode::kFileOpenError;
+    } catch (const toml::syntax_error) {
+      return ErrorCode::kTOMLSyntaxError;
     } catch (const std::exception& e) {
-      return 1;
+      return ErrorCode::kUnknownError;
     }
-    SyncAllParameters(ParameterID::kModel);
-    return 0;
+    return SyncAllParameters(ParameterID::kModel);
   }
-  auto Read(std::istream& is) -> int;
-  auto Write(std::ostream& os) const -> int;
+  auto Read(std::istream& is) -> ErrorCode;
+  auto Write(std::ostream& os) const -> ErrorCode;
   [[nodiscard]] auto GetParameterState() const -> const ParameterState&;
   [[nodiscard]] inline auto GetCore() const
       -> const std::unique_ptr<ProcessorCoreBase>& {
@@ -81,8 +91,9 @@ class ProcessorProxy {
   // parameter_state_ の値を core_ に反映させる。
   // 原則として state と core は同期されており、
   // 外部から Sync を行う必要はない。
-  void SyncParameter(ParameterID param_id);
-  void SyncAllParameters(ParameterID ignore_param_id = ParameterID::kNull);
+  auto SyncParameter(ParameterID param_id) -> ErrorCode;
+  auto SyncAllParameters(ParameterID ignore_param_id = ParameterID::kNull)
+      -> ErrorCode;
 };
 }  // namespace beatrice::common
 

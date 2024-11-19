@@ -5,8 +5,6 @@
 #include <memory>
 #include <string>
 
-#include "common/parameter_schema.h"
-
 namespace beatrice::common {
 
 ParameterState::ParameterState(const ParameterState& rhs) {
@@ -62,22 +60,22 @@ auto ParameterState::GetValue(const ParameterID param_id) const
   return states_.at(param_id);
 }
 
-auto ParameterState::Read(std::istream& is) -> int {
+auto ParameterState::Read(std::istream& is) -> ErrorCode {
   while (true) {
     ParameterID param_id;
     int type_index;
     if (is.read(reinterpret_cast<char*>(&param_id), sizeof(ParameterID))
             .eof()) {
-      return 1;
+      return ErrorCode::kFileTooSmall;
     }
     if (is.read(reinterpret_cast<char*>(&type_index), sizeof(int)).eof()) {
-      return 1;
+      return ErrorCode::kFileTooSmall;
     }
     switch (type_index) {
       case 0: {
         int value;
         if (is.read(reinterpret_cast<char*>(&value), sizeof(int)).eof()) {
-          return 1;
+          return ErrorCode::kFileTooSmall;
         }
         SetValue(param_id, value);
         break;
@@ -85,7 +83,7 @@ auto ParameterState::Read(std::istream& is) -> int {
       case 1: {
         double value;
         if (is.read(reinterpret_cast<char*>(&value), sizeof(double)).eof()) {
-          return 1;
+          return ErrorCode::kFileTooSmall;
         }
         SetValue(param_id, value);
         break;
@@ -93,34 +91,34 @@ auto ParameterState::Read(std::istream& is) -> int {
       case 2: {
         int siz;
         if (is.read(reinterpret_cast<char*>(&siz), sizeof(int)).eof()) {
-          return 1;
+          return ErrorCode::kFileTooSmall;
         }
         std::u8string value;
         value.resize(siz);
         if (is.read(reinterpret_cast<char*>(value.data()), siz).eof()) {
-          return 1;
+          return ErrorCode::kFileTooSmall;
         }
         SetValue(param_id, value);
         break;
       }
       default:
         assert(false);
-        return 1;
+        return ErrorCode::kUnknownError;
     }
     if (is.peek() == EOF && is.eof()) {
-      return 0;
+      return ErrorCode::kSuccess;
     }
   }
 }
 
-auto ParameterState::ReadOrSetDefault(std::istream& is,
-                                      const ParameterSchema& schema) -> int {
+auto ParameterState::ReadOrSetDefault(
+    std::istream& is, const ParameterSchema& schema) -> ErrorCode {
   states_.clear();
   SetDefaultValues(schema);
   return Read(is);
 }
 
-auto ParameterState::Write(std::ostream& os) const -> int {
+auto ParameterState::Write(std::ostream& os) const -> ErrorCode {
   for (const auto& [param_id, value] : states_) {
     const auto type_index = static_cast<int>(value.index());
     os.write(reinterpret_cast<const char*>(&param_id), sizeof(ParameterID));
@@ -139,6 +137,6 @@ auto ParameterState::Write(std::ostream& os) const -> int {
       assert(false);
     }
   }
-  return 0;
+  return ErrorCode::kSuccess;
 }
 }  // namespace beatrice::common

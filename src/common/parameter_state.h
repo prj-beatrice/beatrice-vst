@@ -10,6 +10,7 @@
 #include <string>
 #include <variant>
 
+#include "common/error.h"
 #include "common/parameter_schema.h"
 
 namespace beatrice::common {
@@ -39,9 +40,10 @@ class ParameterState {
   }
   [[nodiscard]] auto GetValue(ParameterID param_id) const
       -> const ParameterState::Value&;
-  auto Read(std::istream& is) -> int;
-  auto ReadOrSetDefault(std::istream& is, const ParameterSchema& schema) -> int;
-  auto Write(std::ostream& os) const -> int;
+  auto Read(std::istream& is) -> ErrorCode;
+  auto ReadOrSetDefault(std::istream& is,
+                        const ParameterSchema& schema) -> ErrorCode;
+  auto Write(std::ostream& os) const -> ErrorCode;
 
  private:
   std::map<ParameterID, Value> states_;

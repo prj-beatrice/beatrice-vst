@@ -2,12 +2,13 @@
 
 #include "common/parameter_schema.h"
 
+#include <exception>
 #include <filesystem>
 
 #include "common/controller_core.h"
-#include "common/model_config.h"
 #include "common/processor_core.h"
 #include "common/processor_proxy.h"
+#include "toml11/single_include/toml.hpp"
 
 namespace beatrice::common {
 
@@ -32,8 +33,12 @@ const ParameterSchema kSchema = [] {
              try {
                const auto toml_data = toml::parse(std::filesystem::path(value));
                model_config = toml::get<ModelConfig>(toml_data);
+             } catch (const toml::file_io_error& e) {
+               return ErrorCode::kFileOpenError;
+             } catch (const toml::syntax_error& e) {
+               return ErrorCode::kTOMLSyntaxError;
              } catch (const std::exception& e) {
-               return 1;
+               return ErrorCode::kUnknownError;
              }
 
              // Voice
@@ -88,11 +93,10 @@ const ParameterSchema kSchema = [] {
                  break;
                }
              }
-             return 0;
+             return ErrorCode::kSuccess;
            },
            [](ProcessorProxy& vc, const std::u8string& value) {
-             vc.LoadModel(value);
-             return 0;
+             return vc.LoadModel(value);
            })},
       {ParameterID::kVoice,
        ListParameter(
@@ -109,7 +113,7 @@ const ParameterSchema kSchema = [] {
            0, u8"Voi"s, parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const int value) {
              if (value < 0 || value >= kMaxNSpeakers) {
-               return 1;
+               return ErrorCode::kSpeakerIDOutOfRange;
              }
              const auto formant_shift =
                  std::get<double>(controller.parameter_state_.GetValue(
@@ -149,7 +153,7 @@ const ParameterSchema kSchema = [] {
                  break;
                }
              }
-             return 0;
+             return ErrorCode::kSuccess;
            },
            [](ProcessorProxy& vc, const int value) {
              return vc.GetCore()->SetTargetSpeaker(value);
@@ -195,7 +199,7 @@ const ParameterSchema kSchema = [] {
                  break;
                }
              }
-             return 0;
+             return ErrorCode::kSuccess;
            },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetFormantShift(value);
@@ -222,7 +226,7 @@ const ParameterSchema kSchema = [] {
                  ParameterID::kAverageSourcePitch, average_source_pitch);
              controller.updated_parameters_.push_back(
                  ParameterID::kAverageSourcePitch);
-             return 0;
+             return ErrorCode::kSuccess;
            },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetPitchShift(value);
@@ -248,19 +252,20 @@ const ParameterSchema kSchema = [] {
              controller.parameter_state_.SetValue(ParameterID::kPitchShift,
                                                   pitch_shift);
              controller.updated_parameters_.push_back(ParameterID::kPitchShift);
-             return 0;
+             return ErrorCode::kSuccess;
            },
-           [](ProcessorProxy&, double) { return 0; })},
+           [](ProcessorProxy&, double) { return ErrorCode::kSuccess; })},
       {ParameterID::kLock,
        ListParameter(
            u8"Lock"s, {u8"AverageSourcePitch"s, u8"PitchShift"s}, 0, u8"Loc"s,
-           parameter_flag::kIsList, [](ControllerCore&, int) { return 0; },
-           [](ProcessorProxy&, int) { return 0; })},
+           parameter_flag::kIsList,
+           [](ControllerCore&, int) { return ErrorCode::kSuccess; },
+           [](ProcessorProxy&, int) { return ErrorCode::kSuccess; })},
       {ParameterID::kInputGain,
        NumberParameter(
            u8"InputGain"s, 0.0, -60.0, 20.0, u8"dB"s, 0, u8"Gain/In"s,
            parameter_flag::kCanAutomate,
-           [](ControllerCore&, double) { return 0; },
+           [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetInputGain(value);
            })},
@@ -268,7 +273,7 @@ const ParameterSchema kSchema = [] {
        NumberParameter(
            u8"OutputGain"s, 0.0, -60.0, 20.0, u8"dB"s, 0, u8"Gain/Out"s,
            parameter_flag::kCanAutomate,
-           [](ControllerCore&, double) { return 0; },
+           [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetOutputGain(value);
            })},
@@ -283,8 +288,8 @@ const ParameterSchema kSchema = [] {
         NumberParameter(
             u8"Speaker "s + i_u8, 60.0, 0.0, 128.0, u8""s, 128 * 8, u8"TgtPit"s,
             parameter_flag::kIsReadOnly | parameter_flag::kIsHidden,
-            [](ControllerCore&, double) { return 0; },
-            [](ProcessorProxy&, double) { return 0; }));
+            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
+            [](ProcessorProxy&, double) { return ErrorCode::kSuccess; }));
   }
 
   return schema;

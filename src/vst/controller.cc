@@ -91,7 +91,7 @@ auto PLUGIN_API Controller::setComponentState(IBStream* const state)
     return kResultFalse;
   }
   auto iss = std::istringstream(state_string, std::ios::binary);
-  if (core_.Read(iss) != 0) {
+  if (core_.Read(iss) != common::ErrorCode::kSuccess) {
     return kResultFalse;
   }
   for (const auto& [param_id, param] : common::kSchema) {
@@ -174,7 +174,8 @@ auto PLUGIN_API Controller::setParamNormalized(
 
 // GUI 側から呼ばれて StringParameter の変更を反映させる
 auto Controller::SetStringParameter(const ParamID vst_param_id,
-                                    const std::u8string& value) -> int {
+                                    const std::u8string& value)
+    -> common::ErrorCode {
   const auto param_id = static_cast<common::ParameterID>(vst_param_id);
   const auto param =
       std::get<common::StringParameter>(common::kSchema.GetParameter(param_id));
@@ -193,7 +194,7 @@ auto Controller::SetStringParameter(const ParamID vst_param_id,
     editor->SyncStringValue(vst_param_id, value);
   }
 
-  return 0;
+  return common::ErrorCode::kSuccess;
 }
 
 }  // namespace beatrice::vst

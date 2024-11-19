@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "common/error.h"
 #include "common/model_config.h"
 
 namespace beatrice::common {
@@ -58,8 +59,8 @@ class NumberParameter {
       std::u8string name, const double default_value, const double min_value,
       const double max_value, std::u8string units, const int divisions,
       std::u8string short_name, const int flags,
-      int (*const controller_set_value)(ControllerCore&, double),
-      int (*const processor_set_value)(ProcessorProxy&, double))
+      ErrorCode (*const controller_set_value)(ControllerCore&, double),
+      ErrorCode (*const processor_set_value)(ProcessorProxy&, double))
       : name_(std::move(name)),
         default_value_(default_value),
         min_value_(min_value),
@@ -88,12 +89,12 @@ class NumberParameter {
   [[nodiscard]] inline auto GetFlags() const -> int { return flags_; }
   // 他のパラメータとの同期を取ったりするのに使う
   inline auto ControllerSetValue(ControllerCore& ctx,
-                                 const double value) const -> int {
+                                 const double value) const -> ErrorCode {
     return controller_set_value_(ctx, value);
   }
   // 音声処理クラスに値を設定するのに使う
   inline auto ProcessorSetValue(ProcessorProxy& ctx,
-                                const double value) const -> int {
+                                const double value) const -> ErrorCode {
     return processor_set_value_(ctx, value);
   }
 
@@ -106,18 +107,17 @@ class NumberParameter {
   int divisions_;
   std::u8string short_name_;
   int flags_;
-  int (*controller_set_value_)(ControllerCore&, double);
-  int (*const processor_set_value_)(ProcessorProxy&, double);
+  ErrorCode (*controller_set_value_)(ControllerCore&, double);
+  ErrorCode (*const processor_set_value_)(ProcessorProxy&, double);
 };
 
 class ListParameter {
  public:
-  inline ListParameter(std::u8string name,
-                       const std::vector<std::u8string>& values,
-                       const int default_value, std::u8string short_name,
-                       int flags,
-                       int (*const controller_set_value)(ControllerCore&, int),
-                       int (*const processor_set_value)(ProcessorProxy&, int))
+  inline ListParameter(
+      std::u8string name, const std::vector<std::u8string>& values,
+      const int default_value, std::u8string short_name, int flags,
+      ErrorCode (*const controller_set_value)(ControllerCore&, int),
+      ErrorCode (*const processor_set_value)(ProcessorProxy&, int))
       : name_(std::move(name)),
         values_(values),
         default_value_(default_value),
@@ -143,11 +143,11 @@ class ListParameter {
   }
   [[nodiscard]] inline auto GetFlags() const -> int { return flags_; }
   inline auto ControllerSetValue(ControllerCore& ctx,
-                                 const int value) const -> int {
+                                 const int value) const -> ErrorCode {
     return controller_set_value_(ctx, value);
   }
   inline auto ProcessorSetValue(ProcessorProxy& ctx,
-                                const int value) const -> int {
+                                const int value) const -> ErrorCode {
     return processor_set_value_(ctx, value);
   }
 
@@ -157,8 +157,8 @@ class ListParameter {
   int default_value_;
   std::u8string short_name_;
   int flags_;
-  int (*controller_set_value_)(ControllerCore&, int);
-  int (*const processor_set_value_)(ProcessorProxy&, int);
+  ErrorCode (*controller_set_value_)(ControllerCore&, int);
+  ErrorCode (*const processor_set_value_)(ProcessorProxy&, int);
 };
 
 class StringParameter {
@@ -166,8 +166,10 @@ class StringParameter {
   inline StringParameter(
       std::u8string name, std::u8string default_value,
       const bool reset_when_model_load,
-      int (*const controller_set_value)(ControllerCore&, const std::u8string&),
-      int (*const processor_set_value)(ProcessorProxy&, const std::u8string&))
+      ErrorCode (*const controller_set_value)(ControllerCore&,
+                                              const std::u8string&),
+      ErrorCode (*const processor_set_value)(ProcessorProxy&,
+                                             const std::u8string&))
       : name_(std::move(name)),
         default_value_(std::move(default_value)),
         reset_when_model_load_(reset_when_model_load),
@@ -182,12 +184,12 @@ class StringParameter {
   [[nodiscard]] inline auto GetResetWhenModelLoad() const -> bool {
     return reset_when_model_load_;
   }
-  inline auto ControllerSetValue(ControllerCore& ctx,
-                                 const std::u8string& value) const -> int {
+  inline auto ControllerSetValue(
+      ControllerCore& ctx, const std::u8string& value) const -> ErrorCode {
     return controller_set_value_(ctx, value);
   }
   inline auto ProcessorSetValue(ProcessorProxy& ctx,
-                                const std::u8string& value) const -> int {
+                                const std::u8string& value) const -> ErrorCode {
     return processor_set_value_(ctx, value);
   }
 
@@ -195,8 +197,9 @@ class StringParameter {
   std::u8string name_;
   std::u8string default_value_;
   bool reset_when_model_load_;
-  int (*controller_set_value_)(ControllerCore&, const std::u8string&);
-  int (*const processor_set_value_)(ProcessorProxy&, const std::u8string&);
+  ErrorCode (*controller_set_value_)(ControllerCore&, const std::u8string&);
+  ErrorCode (*const processor_set_value_)(ProcessorProxy&,
+                                          const std::u8string&);
 };
 
 using ParameterVariant =
