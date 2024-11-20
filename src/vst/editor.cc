@@ -215,8 +215,19 @@ void Editor::SyncModelDescription() {
   model_voice_description_.SetVoiceDescription(u8"");
   model_config_ = std::nullopt;
   portraits_.clear();
-  if (!std::filesystem::exists(file) ||
-      !std::filesystem::is_regular_file(file)) {
+  if (file.empty()) {
+    // 初期状態
+    return;
+  } else if (!std::filesystem::exists(file) ||
+             !std::filesystem::is_regular_file(file)) {
+    // ファイルが移動して読み込めない場合の分岐だが、
+    // モデルを読み込んだ後に GUI を閉じモデルファイルを移動して
+    // 再び GUI を開いた場合などには
+    // Processor のみ読み込まれている可能性がある。
+    model_selector->setText("<failed to load>");
+    model_voice_description_.SetModelDescription(
+        u8"Error: The model could not be loaded due to a file move or another "
+        u8"issue. Please reload a valid model.");
     return;
   }
   try {
@@ -307,8 +318,9 @@ void Editor::SyncModelDescription() {
       column_view->setDirty();
     }
   } catch (const std::exception& e) {
+    model_selector->setText("<failed to load>");
     model_voice_description_.SetModelDescription(
-        u8"Error: Failed to load model.\n" +
+        u8"Error:\n" +
         std::u8string(e.what(), e.what() + std::strlen(e.what())));
     return;
   }
@@ -356,6 +368,11 @@ void Editor::valueChanged(CControl* const pControl) {
     }
     const auto normalized_value = Normalize(*list_param, plain_value);
     const auto error_code = list_param->ControllerSetValue(core, plain_value);
+    if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
+      // これが表示されることは無いはず
+      model_voice_description_.SetVoiceDescription(
+          u8"Error: Speaker ID out of range.");
+    }
     assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<FileSelector*>(pControl)) {
@@ -363,6 +380,12 @@ void Editor::valueChanged(CControl* const pControl) {
     assert(str_param);
     const auto file = control->GetPath();
     auto error_code = str_param->ControllerSetValue(core, file.u8string());
+    if (error_code == common::ErrorCode::kFileOpenError ||
+        error_code == common::ErrorCode::kTOMLSyntaxError) {
+      // Controller とは別に Editor::SyncModelDescription でも改めて
+      // ファイルを読み込もうとして失敗するので、ここではエラー処理しない
+      error_code = common::ErrorCode::kSuccess;
+    }
     assert(error_code == common::ErrorCode::kSuccess);
     error_code = controller->SetStringParameter(vst_param_id, file.u8string());
     assert(error_code == common::ErrorCode::kSuccess);
