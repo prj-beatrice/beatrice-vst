@@ -3,6 +3,7 @@
 #ifndef BEATRICE_COMMON_PROCESSOR_CORE_H_
 #define BEATRICE_COMMON_PROCESSOR_CORE_H_
 
+#include "common/error.h"
 #include "common/model_config.h"
 
 namespace beatrice::common {
@@ -21,22 +22,34 @@ class ProcessorCoreBase {
   virtual ~ProcessorCoreBase() = default;
   [[nodiscard]] virtual auto GetVersion() const -> int = 0;
   virtual auto Process(const float* input, float* output,
-                       int n_samples) -> int = 0;
-  virtual auto ResetContext() -> int { return 0; }
+                       int n_samples) -> ErrorCode = 0;
+  virtual auto ResetContext() -> ErrorCode { return ErrorCode::kSuccess; }
   virtual auto LoadModel(const ModelConfig& /*config*/,
-                         const std::filesystem::path& /*file*/) -> int {
-    return 0;
+                         const std::filesystem::path& /*file*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
   }
 
  protected:
-  virtual auto SetSampleRate(double /*sample_rate*/) -> int { return 0; }
+  virtual auto SetSampleRate(double /*sample_rate*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
 
  public:
-  virtual auto SetTargetSpeaker(int /*target_speaker*/) -> int { return 0; }
-  virtual auto SetFormantShift(double /*formant_shift*/) -> int { return 0; }
-  virtual auto SetPitchShift(double /*pitch_shift*/) -> int { return 0; }
-  virtual auto SetInputGain(double /*input_gain*/) -> int { return 0; }
-  virtual auto SetOutputGain(double /*output_gain*/) -> int { return 0; }
+  virtual auto SetTargetSpeaker(int /*target_speaker*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetFormantShift(double /*formant_shift*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetPitchShift(double /*pitch_shift*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetInputGain(double /*input_gain*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetOutputGain(double /*output_gain*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
 
   friend class ProcessorProxy;
 };
@@ -47,9 +60,9 @@ class ProcessorCoreUnloaded : public ProcessorCoreBase {
   using ProcessorCoreBase::ProcessorCoreBase;
   [[nodiscard]] inline auto GetVersion() const -> int override { return -1; }
   inline auto Process(const float* const /*input*/, float* const output,
-                      const int n_samples) -> int override {
+                      const int n_samples) -> ErrorCode override {
     std::memset(output, 0, sizeof(float) * n_samples);
-    return 0;
+    return ErrorCode::kSuccess;
   }
 };
 }  // namespace beatrice::common

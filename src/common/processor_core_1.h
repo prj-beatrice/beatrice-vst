@@ -8,6 +8,7 @@
 #include "beatricelib/beatrice.h"
 
 // Beatrice
+#include "common/error.h"
 #include "common/gain.h"
 #include "common/processor_core.h"
 #include "common/resample.h"
@@ -39,16 +40,16 @@ class ProcessorCore1 : public ProcessorCoreBase {
   }
   [[nodiscard]] auto GetVersion() const -> int override;
   auto Process(const float* input, float* output,
-               int n_samples) -> int override;
-  auto ResetContext() -> int override;
+               int n_samples) -> ErrorCode override;
+  auto ResetContext() -> ErrorCode override;
   auto LoadModel(const ModelConfig& /*config*/,
-                 const std::filesystem::path& /*file*/) -> int override;
-  auto SetSampleRate(double /*sample_rate*/) -> int override;
-  auto SetTargetSpeaker(int /*target_speaker*/) -> int override;
-  auto SetFormantShift(double /*formant_shift*/) -> int override;
-  auto SetPitchShift(double /*pitch_shift*/) -> int override;
-  auto SetInputGain(double /*input_gain*/) -> int override;
-  auto SetOutputGain(double /*output_gain*/) -> int override;
+                 const std::filesystem::path& /*file*/) -> ErrorCode override;
+  auto SetSampleRate(double /*sample_rate*/) -> ErrorCode override;
+  auto SetTargetSpeaker(int /*target_speaker*/) -> ErrorCode override;
+  auto SetFormantShift(double /*formant_shift*/) -> ErrorCode override;
+  auto SetPitchShift(double /*pitch_shift*/) -> ErrorCode override;
+  auto SetInputGain(double /*input_gain*/) -> ErrorCode override;
+  auto SetOutputGain(double /*output_gain*/) -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {

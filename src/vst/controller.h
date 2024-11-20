@@ -11,6 +11,7 @@
 
 // Beatrice
 #include "common/controller_core.h"
+#include "common/error.h"
 #include "vst/editor.h"
 
 namespace beatrice::vst {
@@ -48,7 +49,7 @@ class Controller : public Steinberg::Vst::EditController {
   common::ControllerCore core_;
   std::vector<Editor*> editors_;
 
-  auto SetStringParameter(ParamID, const std::u8string&) -> int;
+  auto SetStringParameter(ParamID, const std::u8string&) -> common::ErrorCode;
   friend Editor;
 };
 

@@ -20,11 +20,20 @@
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
+#include "common/error.h"
+#include "common/parameter_schema.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
 
+#ifdef BEATRICE_ONLY_FOR_LINTER_DO_NOT_COMPILE_WITH_THIS
+#include "vst/metadata.h.in"
+#else
+#include "metadata.h"  // NOLINT(build/include_subdir)
+#endif
+
 namespace beatrice::vst {
 
+using common::ParameterID;
 using Steinberg::ViewRect;
 using Steinberg::Vst::String128;
 using Steinberg::Vst::StringListParameter;
@@ -97,21 +106,22 @@ auto PLUGIN_API Editor::open(void* const parent,
   auto context = Context();  // オフセット設定
   BeginColumn(context, 399, kDarkColorScheme.surface_1);
   BeginGroup(context, u8"General");
-  MakeSlider(context, 2000, 1);  // Gain
-  MakeSlider(context, 2001, 1);  // Gain
-  MakeSlider(context, 1007, 2);  // PitchShift
-  MakeSlider(context, 1008, 2);  // AverageSourcePitch
-  MakeCombobox(context, 1009, kTransparentCColor,
-               kDarkColorScheme.on_surface);  // Lock
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch),
+             2);
+  MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
+               kTransparentCColor, kDarkColorScheme.on_surface);
   EndGroup(context);
   EndColumn(context);
 
   BeginColumn(context, 399, kDarkColorScheme.surface_2);
   BeginGroup(context, u8"Model");
-  MakeFileSelector(context, 1);  // Model
-  MakeCombobox(context, 1000, kDarkColorScheme.primary,
-               kDarkColorScheme.on_primary);  // Voice
-  MakeSlider(context, 1006, 2);               // Formant
+  MakeFileSelector(context, static_cast<ParamID>(ParameterID::kModel));
+  MakeCombobox(context, static_cast<ParamID>(ParameterID::kVoice),
+               kDarkColorScheme.primary, kDarkColorScheme.on_primary);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2);
   MakeModelVoiceDescription(context);
   EndGroup(context);
   EndColumn(context);
@@ -156,10 +166,11 @@ void Editor::SyncValue(const ParamID param_id,
   auto* const control = controls_.at(param_id);
 
   // Voice は色々ややこしいので特別扱いする
-  if (param_id == 1000) {
-    const auto voice_id = Denormalize(
-        std::get<common::ListParameter>(common::kSchema.GetParameter(1, 0)),
-        normalized_value);
+  if (param_id == static_cast<ParamID>(ParameterID::kVoice)) {
+    const auto voice_id =
+        Denormalize(std::get<common::ListParameter>(
+                        common::kSchema.GetParameter(ParameterID::kVoice)),
+                    normalized_value);
     // controller と editor で最大値が異なるため
     // setValueNormalized は正しく動かない
     control->setValue(static_cast<float>(voice_id));
@@ -181,7 +192,7 @@ void Editor::SyncStringValue(const ParamID param_id,
     return;
   }
   auto* const control = static_cast<CTextLabel*>(controls_.at(param_id));
-  if (param_id == 1) {
+  if (param_id == static_cast<ParamID>(ParameterID::kModel)) {
     auto* const model_selector = static_cast<FileSelector*>(control);
     model_selector->SetPath(value);
     SyncModelDescription();
@@ -193,8 +204,10 @@ void Editor::SyncStringValue(const ParamID param_id,
 // model_selector->getPath() をもとに
 // 話者リスト等を更新する
 void Editor::SyncModelDescription() {
-  auto* const model_selector = static_cast<FileSelector*>(controls_.at(1));
-  auto* const voice_combobox = static_cast<COptionMenu*>(controls_.at(1000));
+  auto* const model_selector = static_cast<FileSelector*>(
+      controls_.at(static_cast<ParamID>(ParameterID::kModel)));
+  auto* const voice_combobox = static_cast<COptionMenu*>(
+      controls_.at(static_cast<ParamID>(ParameterID::kVoice)));
   const auto file = model_selector->GetPath();
   model_selector->setText("<unloaded>");
   voice_combobox->removeAllEntry();
@@ -202,8 +215,19 @@ void Editor::SyncModelDescription() {
   model_voice_description_.SetVoiceDescription(u8"");
   model_config_ = std::nullopt;
   portraits_.clear();
-  if (!std::filesystem::exists(file) ||
-      !std::filesystem::is_regular_file(file)) {
+  if (file.empty()) {
+    // 初期状態
+    return;
+  } else if (!std::filesystem::exists(file) ||
+             !std::filesystem::is_regular_file(file)) {
+    // ファイルが移動して読み込めない場合の分岐だが、
+    // モデルを読み込んだ後に GUI を閉じモデルファイルを移動して
+    // 再び GUI を開いた場合などには
+    // Processor のみ読み込まれている可能性がある。
+    model_selector->setText("<failed to load>");
+    model_voice_description_.SetModelDescription(
+        u8"Error: The model could not be loaded due to a file move or another "
+        u8"issue. Please reload a valid model.");
     return;
   }
   try {
@@ -275,9 +299,11 @@ void Editor::SyncModelDescription() {
     load_portrait_succeeded: {}
     }
     voice_combobox->setDirty();
-    const auto voice_id = Denormalize(
-        std::get<common::ListParameter>(common::kSchema.GetParameter(1, 0)),
-        controller->getParamNormalized(1000));
+    const auto voice_id =
+        Denormalize(std::get<common::ListParameter>(
+                        common::kSchema.GetParameter(ParameterID::kVoice)),
+                    controller->getParamNormalized(
+                        static_cast<ParamID>(ParameterID::kVoice)));
     const auto& voice = model_config_->voices[voice_id];
     portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
     portrait_view_->setDirty();
@@ -292,8 +318,9 @@ void Editor::SyncModelDescription() {
       column_view->setDirty();
     }
   } catch (const std::exception& e) {
+    model_selector->setText("<failed to load>");
     model_voice_description_.SetModelDescription(
-        u8"Error: Failed to load model.\n" +
+        u8"Error:\n" +
         std::u8string(e.what(), e.what() + std::strlen(e.what())));
     return;
   }
@@ -305,9 +332,8 @@ void Editor::SyncModelDescription() {
 // あとダブルクリックでデフォルトに戻したい。
 void Editor::valueChanged(CControl* const pControl) {
   const auto vst_param_id = pControl->getTag();
-  const auto group_id = vst_param_id / kParamsPerGroup;
-  const auto param_id = vst_param_id % kParamsPerGroup;
-  const auto& param = common::kSchema.GetParameter(group_id, param_id);
+  const auto param_id = static_cast<ParameterID>(vst_param_id);
+  const auto& param = common::kSchema.GetParameter(param_id);
   auto* const controller = static_cast<Controller*>(getController());
   auto& core = controller->core_;
   const auto communicate = [&controller](const int param_id,
@@ -325,38 +351,53 @@ void Editor::valueChanged(CControl* const pControl) {
     auto normalized_value = control->getValueNormalized();
     const auto plain_value = Denormalize(*num_param, normalized_value);
     if (plain_value ==
-        std::get<double>(core.parameter_state_.GetValue(group_id, param_id))) {
+        std::get<double>(core.parameter_state_.GetValue(param_id))) {
       return;
     }
     normalized_value = static_cast<float>(Normalize(*num_param, plain_value));
-    num_param->ControllerSetValue(core, plain_value);
+    const auto error_code = num_param->ControllerSetValue(core, plain_value);
+    assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<COptionMenu*>(pControl)) {
     const auto* const list_param = std::get_if<common::ListParameter>(&param);
     assert(list_param);
     const auto plain_value = static_cast<int>(control->getValue());
     if (plain_value ==
-        std::get<int>(core.parameter_state_.GetValue(group_id, param_id))) {
+        std::get<int>(core.parameter_state_.GetValue(param_id))) {
       return;
     }
     const auto normalized_value = Normalize(*list_param, plain_value);
-    list_param->ControllerSetValue(core, plain_value);
+    const auto error_code = list_param->ControllerSetValue(core, plain_value);
+    if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
+      // これが表示されることは無いはず
+      model_voice_description_.SetVoiceDescription(
+          u8"Error: Speaker ID out of range.");
+    }
+    assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<FileSelector*>(pControl)) {
     const auto* const str_param = std::get_if<common::StringParameter>(&param);
     assert(str_param);
     const auto file = control->GetPath();
-    str_param->ControllerSetValue(core, file.u8string());
-    controller->SetStringParameter(vst_param_id, file.u8string());
+    auto error_code = str_param->ControllerSetValue(core, file.u8string());
+    if (error_code == common::ErrorCode::kFileOpenError ||
+        error_code == common::ErrorCode::kTOMLSyntaxError) {
+      // Controller とは別に Editor::SyncModelDescription でも改めて
+      // ファイルを読み込もうとして失敗するので、ここではエラー処理しない
+      error_code = common::ErrorCode::kSuccess;
+    }
+    assert(error_code == common::ErrorCode::kSuccess);
+    error_code = controller->SetStringParameter(vst_param_id, file.u8string());
+    assert(error_code == common::ErrorCode::kSuccess);
   } else {
     assert(false);
   }
 
   // 連動するパラメータの処理
-  for (const auto& [group_id, param_id] : core.updated_parameters_) {
-    const auto vst_param_id = kParamsPerGroup * group_id + param_id;
-    const auto& value = core.parameter_state_.GetValue(group_id, param_id);
-    const auto& param = common::kSchema.GetParameter(group_id, param_id);
+  for (const auto& param_id : core.updated_parameters_) {
+    const auto vst_param_id = static_cast<ParamID>(param_id);
+    const auto& value = core.parameter_state_.GetValue(param_id);
+    const auto& param = common::kSchema.GetParameter(param_id);
     if (const auto* const num_param =
             std::get_if<common::NumberParameter>(&param)) {
       const auto normalized_value =
@@ -381,6 +422,8 @@ void Editor::valueChanged(CControl* const pControl) {
 //                            const char* const message) -> CMessageResult{
 //     return VSTGUIEditor::notify(sender, message);
 // }
+
+// 以下は open() からのみ呼ばれるメンバ関数
 
 void Editor::BeginColumn(Context& context, const int width,
                          const CColor& back_color) {
@@ -564,10 +607,9 @@ auto Editor::MakeCombobox(
 // -> valueChanged で連動した他のパラメータの変更が処理される
 auto Editor::MakeFileSelector(Context& context,
                               ParamID vst_param_id) -> CView* {
-  const auto group_id = static_cast<int>(vst_param_id) / kParamsPerGroup;
-  const auto param_id = static_cast<int>(vst_param_id) % kParamsPerGroup;
-  const auto param = std::get<common::StringParameter>(
-      common::kSchema.GetParameter(group_id, param_id));
+  const auto param_id = static_cast<ParameterID>(vst_param_id);
+  const auto param =
+      std::get<common::StringParameter>(common::kSchema.GetParameter(param_id));
   auto* const bmp =
       new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
                          kDarkColorScheme.outline);
@@ -583,7 +625,7 @@ auto Editor::MakeFileSelector(Context& context,
   control->setFontColor(kDarkColorScheme.on_surface);
   control->setHoriAlign(CHoriTxtAlign::kCenterText);
   control->SetPath(*std::get<std::unique_ptr<std::u8string>>(
-      controller->core_.parameter_state_.GetValue(group_id, param_id)));
+      controller->core_.parameter_state_.GetValue(param_id)));
   context.column_elements.push_back(control);
   controls_.insert({vst_param_id, control});
 

@@ -8,9 +8,9 @@
 #include <map>
 #include <memory>
 #include <string>
-#include <tuple>
 #include <variant>
 
+#include "common/error.h"
 #include "common/parameter_schema.h"
 
 namespace beatrice::common {
@@ -27,26 +27,26 @@ class ParameterState {
 
   void SetDefaultValues(const ParameterSchema& schema);
   template <typename T>
-  inline void SetValue(const int group_id, const int param_id, const T value)
+  inline void SetValue(const ParameterID param_id, const T value)
     requires(sizeof(T) <= 8)
   {  // NOLINT(whitespace/braces)
-    states_.insert_or_assign(std::make_tuple(group_id, param_id), value);
+    states_.insert_or_assign(param_id, value);
   }
   template <typename T>
-  inline void SetValue(const int group_id, const int param_id, const T& value)
+  inline void SetValue(const ParameterID param_id, const T& value)
     requires(sizeof(T) > 8)
   {  // NOLINT(whitespace/braces)
-    states_.insert_or_assign(std::make_tuple(group_id, param_id),
-                             std::make_unique<T>(value));
+    states_.insert_or_assign(param_id, std::make_unique<T>(value));
   }
-  [[nodiscard]] auto GetValue(int group_id, int param_id) const
+  [[nodiscard]] auto GetValue(ParameterID param_id) const
       -> const ParameterState::Value&;
-  auto Read(std::istream& is) -> int;
-  auto ReadOrSetDefault(std::istream& is, const ParameterSchema& schema) -> int;
-  auto Write(std::ostream& os) const -> int;
+  auto Read(std::istream& is) -> ErrorCode;
+  auto ReadOrSetDefault(std::istream& is,
+                        const ParameterSchema& schema) -> ErrorCode;
+  auto Write(std::ostream& os) const -> ErrorCode;
 
  private:
-  std::map<std::tuple<int, int>, Value> states_;
+  std::map<ParameterID, Value> states_;
 };
 
 }  // namespace beatrice::common
