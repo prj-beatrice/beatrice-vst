@@ -10,6 +10,7 @@
 // Beatrice
 #include "common/error.h"
 #include "common/gain.h"
+#include "common/model_config.h"
 #include "common/processor_core.h"
 #include "common/resample.h"
 
@@ -50,6 +51,9 @@ class ProcessorCore1 : public ProcessorCoreBase {
   auto SetPitchShift(double /*pitch_shift*/) -> ErrorCode override;
   auto SetInputGain(double /*input_gain*/) -> ErrorCode override;
   auto SetOutputGain(double /*output_gain*/) -> ErrorCode override;
+  auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode override;
+  auto SetIntonationIntensity(double /*intonation_intensity*/)
+      -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {
@@ -65,6 +69,8 @@ class ProcessorCore1 : public ProcessorCoreBase {
   int target_speaker_ = 0;
   double formant_shift_ = 0.0;
   double pitch_shift_ = 0.0;
+  double average_source_pitch_ = 52.0;
+  double intonation_intensity_ = 1.0;
 
   resampler::AnyFreqInOut<ConvertWithModelBlockSize> any_freq_in_out_;
 

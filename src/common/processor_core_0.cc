@@ -49,9 +49,14 @@ void ProcessorCore0::Process1(const float* const input, float* const output) {
   std::array<float, 4> pitch_feature;
   Beatrice20a2_EstimatePitch1(pitch_estimator_, input, &quantized_pitch,
                               pitch_feature.data(), pitch_context_);
-  quantized_pitch += static_cast<int>(
-      std::round(BEATRICE_PITCH_BINS_PER_OCTAVE * pitch_shift_ / 12.0));
-  quantized_pitch = std::clamp(quantized_pitch, 1, BEATRICE_PITCH_BINS - 1);
+  const auto tmp_quantized_pitch =
+      average_source_pitch_ +
+      (static_cast<double>(quantized_pitch) - average_source_pitch_) *
+          intonation_intensity_ +
+      static_cast<double>(BEATRICE_PITCH_BINS_PER_OCTAVE) * pitch_shift_ / 12.0;
+  quantized_pitch =
+      std::clamp(static_cast<int>(std::round(tmp_quantized_pitch)), 1,
+                 BEATRICE_PITCH_BINS - 1);
   std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker;
   std::memcpy(speaker.data(),
               &speaker_embeddings_[target_speaker_ *
@@ -170,4 +175,17 @@ auto ProcessorCore0::SetOutputGain(const double new_output_gain) -> ErrorCode {
   output_gain_context_.SetTargetGain(new_output_gain);
   return ErrorCode::kSuccess;
 }
+
+auto ProcessorCore0::SetAverageSourcePitch(const double new_average_pitch)
+    -> ErrorCode {
+  average_source_pitch_ = std::clamp(new_average_pitch, 0.0, 128.0);
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore0::SetIntonationIntensity(
+    const double new_intonation_intensity) -> ErrorCode {
+  intonation_intensity_ = new_intonation_intensity;
+  return ErrorCode::kSuccess;
+}
+
 }  // namespace beatrice::common
