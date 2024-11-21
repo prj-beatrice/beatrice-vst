@@ -50,6 +50,13 @@ class ProcessorCoreBase {
   virtual auto SetOutputGain(double /*output_gain*/) -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  virtual auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetIntonationIntensity(double /*intonation_intensity*/)
+      -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
 
   friend class ProcessorProxy;
 };

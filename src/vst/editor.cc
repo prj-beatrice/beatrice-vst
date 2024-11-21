@@ -113,6 +113,8 @@ auto PLUGIN_API Editor::open(void* const parent,
              2);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
                kTransparentCColor, kDarkColorScheme.on_surface);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
+             1);
   EndGroup(context);
   EndColumn(context);
 
