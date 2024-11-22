@@ -57,6 +57,13 @@ class ProcessorCoreBase {
       -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  virtual auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetPitchCorrectionType(int /*pitch_correction_type*/)
+      -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
 
   friend class ProcessorProxy;
 };

@@ -50,6 +50,8 @@ enum class ParameterID : int {
   kInputGain = 7,
   kOutputGain = 8,
   kIntonationIntensity = 9,
+  kPitchCorrection = 10,
+  kPitchCorrectionType = 11,
   kAverageTargetPitchBase = 100,
   kSentinel = kAverageTargetPitchBase + kMaxNSpeakers,
 };

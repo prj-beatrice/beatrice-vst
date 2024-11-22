@@ -17,9 +17,9 @@ using std::operator""s;
 static constexpr auto kMaxAbsPitchShift = 24.0;
 
 // パラメータの追加には以下 3 箇所の変更が必要
-// * parameter_schema.cc                   (メタデータの設定)
-// * processor_core.h, processor_core_*.cc (信号処理)
-// * editor.cc                             (GUI)
+// * parameter_schema.h, parameter_schema.cc (メタデータの設定)
+// * processor_core.h, processor_core_*.cc   (信号処理)
+// * editor.cc                               (GUI)
 
 // パラメータ ID に対して、そのパラメータはどのような名前で、
 // どのような値域を持ち、どのような操作に対応するのかを保持する。
@@ -286,6 +286,22 @@ const ParameterSchema kSchema = [] {
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetIntonationIntensity(value);
+           })},
+      {ParameterID::kPitchCorrection,
+       NumberParameter(
+           u8"PitchCorrection"s, 0.0, 0.0, 1.0, u8""s, 10, u8"PitCor"s,
+           parameter_flag::kCanAutomate,
+           [](ControllerCore&, double) { return ErrorCode::kSuccess; },
+           [](ProcessorProxy& vc, const double value) {
+             return vc.GetCore()->SetPitchCorrection(value);
+           })},
+      {ParameterID::kPitchCorrectionType,
+       ListParameter(
+           u8"PitchCorrectionType"s, {u8"Hard 0"s, u8"Hard 1"s}, 0, u8"CorTyp"s,
+           parameter_flag::kCanAutomate,
+           [](ControllerCore&, int) { return ErrorCode::kSuccess; },
+           [](ProcessorProxy& vc, const int value) {
+             return vc.GetCore()->SetPitchCorrectionType(value);
            })},
   });
 

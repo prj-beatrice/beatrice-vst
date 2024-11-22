@@ -14,6 +14,7 @@ enum class [[nodiscard]] ErrorCode : int {
   kInvalidFileSize = Beatrice_kInvalidFileSize,
   kTOMLSyntaxError,
   kSpeakerIDOutOfRange,
+  kInvalidPitchCorrectionType,
   kModelNotLoaded,
   kResamplerNotReady,
   kGainNotReady,
