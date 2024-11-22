@@ -33,6 +33,9 @@ auto ProcessorCore1::Process(const float* const input, float* const output,
                              BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS) {
     return fill_zero(), ErrorCode::kSpeakerIDOutOfRange;
   }
+  if (pitch_correction_type_ < 0 || pitch_correction_type_ > 1) {
+    return fill_zero(), ErrorCode::kInvalidPitchCorrectionType;
+  }
   assert(static_cast<int>(formant_shift_embeddings_.size()) ==
          9 * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
   gain_.Process(input, output, n_samples, input_gain_context_);
@@ -49,11 +52,66 @@ void ProcessorCore1::Process1(const float* const input, float* const output) {
   std::array<float, 4> pitch_feature;
   Beatrice20b1_EstimatePitch1(pitch_estimator_, input, &quantized_pitch,
                               pitch_feature.data(), pitch_context_);
-  const auto tmp_quantized_pitch =
+  constexpr auto kPitchBinsPerSemitone =
+      static_cast<double>(BEATRICE_PITCH_BINS_PER_OCTAVE) / 12.0;
+  // PitchShift, IntonationIntensity
+  auto tmp_quantized_pitch =
       average_source_pitch_ +
       (static_cast<double>(quantized_pitch) - average_source_pitch_) *
           intonation_intensity_ +
-      static_cast<double>(BEATRICE_PITCH_BINS_PER_OCTAVE) * pitch_shift_ / 12.0;
+      kPitchBinsPerSemitone * pitch_shift_;
+  // PitchCorrection
+  if (pitch_correction_ != 0.0) {
+    const auto before_pitch_correction = tmp_quantized_pitch;
+    if (pitch_correction_type_ == 0) {
+      // x|x|^{-p}
+      const auto nearest_pitch =
+          (std::floor(tmp_quantized_pitch / kPitchBinsPerSemitone) + 0.5) *
+          kPitchBinsPerSemitone;
+      const auto normalized_delta =
+          (tmp_quantized_pitch - nearest_pitch) * (2.0 / kPitchBinsPerSemitone);
+      if (std::abs(normalized_delta) < 1e-4) {
+        tmp_quantized_pitch = nearest_pitch;
+      } else {
+        tmp_quantized_pitch =
+            nearest_pitch +
+            normalized_delta *
+                std::pow(std::abs(normalized_delta), -pitch_correction_) *
+                (kPitchBinsPerSemitone / 2.0);
+      }
+      assert(std::abs(tmp_quantized_pitch -
+                      std::round(tmp_quantized_pitch / kPitchBinsPerSemitone) *
+                          kPitchBinsPerSemitone) <=
+             std::abs(before_pitch_correction -
+                      std::round(tmp_quantized_pitch / kPitchBinsPerSemitone) *
+                          kPitchBinsPerSemitone) +
+                 1e-4);
+    } else if (pitch_correction_type_ == 1) {
+      // sgn(x)|x|^{1/(1-p)}
+      const auto nearest_pitch =
+          std::round(tmp_quantized_pitch / kPitchBinsPerSemitone) *
+          kPitchBinsPerSemitone;
+      const auto normalized_delta =
+          (tmp_quantized_pitch - nearest_pitch) * (2.0 / kPitchBinsPerSemitone);
+      if (pitch_correction_ > 1 - 1e-4) {
+        tmp_quantized_pitch = nearest_pitch;
+      } else if (normalized_delta >= 0.0) {
+        tmp_quantized_pitch =
+            nearest_pitch +
+            std::pow(normalized_delta, 1.0 / (1.0 - pitch_correction_)) *
+                (kPitchBinsPerSemitone / 2.0);
+      } else {
+        tmp_quantized_pitch =
+            nearest_pitch -
+            std::pow(-normalized_delta, 1.0 / (1.0 - pitch_correction_)) *
+                (kPitchBinsPerSemitone / 2.0);
+      }
+      assert(std::abs(tmp_quantized_pitch - nearest_pitch) <=
+             std::abs(before_pitch_correction - nearest_pitch) + 1e-4);
+    } else {
+      assert(false);
+    }
+  }
   quantized_pitch =
       std::clamp(static_cast<int>(std::round(tmp_quantized_pitch)), 1,
                  BEATRICE_PITCH_BINS - 1);
@@ -185,6 +243,21 @@ auto ProcessorCore1::SetAverageSourcePitch(const double new_average_pitch)
 auto ProcessorCore1::SetIntonationIntensity(
     const double new_intonation_intensity) -> ErrorCode {
   intonation_intensity_ = new_intonation_intensity;
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore1::SetPitchCorrection(const double new_pitch_correction)
+    -> ErrorCode {
+  pitch_correction_ = std::clamp(new_pitch_correction, 0.0, 1.0);
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore1::SetPitchCorrectionType(const int new_pitch_correction_type)
+    -> ErrorCode {
+  if (new_pitch_correction_type < 0 || new_pitch_correction_type > 1) {
+    return ErrorCode::kInvalidPitchCorrectionType;
+  }
+  pitch_correction_type_ = new_pitch_correction_type;
   return ErrorCode::kSuccess;
 }
 

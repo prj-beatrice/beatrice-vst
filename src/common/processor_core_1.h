@@ -54,6 +54,9 @@ class ProcessorCore1 : public ProcessorCoreBase {
   auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode override;
   auto SetIntonationIntensity(double /*intonation_intensity*/)
       -> ErrorCode override;
+  auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode override;
+  auto SetPitchCorrectionType(int /*pitch_correction_type*/)
+      -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {
@@ -71,6 +74,8 @@ class ProcessorCore1 : public ProcessorCoreBase {
   double pitch_shift_ = 0.0;
   double average_source_pitch_ = 52.0;
   double intonation_intensity_ = 1.0;
+  double pitch_correction_ = 0.0;
+  int pitch_correction_type_ = 0;
 
   resampler::AnyFreqInOut<ConvertWithModelBlockSize> any_freq_in_out_;
 
