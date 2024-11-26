@@ -566,7 +566,6 @@ auto Editor::MakeCombobox(
   controls_.insert({param_id, control});
 
   // ▼ 記号
-  // TODO(bug): クリックの判定吸われるのをなんとかする
   const auto arrow_pos =
       CRect(0, 0, kElementHeight, kElementHeight)
           .offset(context.x + (kElementWidth - kElementHeight), context.y)
@@ -581,6 +580,8 @@ auto Editor::MakeCombobox(
   arrow_font->forget();
   arrow_control->setFontColor(font_color);
   arrow_control->setHoriAlign(CHoriTxtAlign::kCenterText);
+  // クリックの判定吸われないように、▼ 記号へのマウス操作を無効にする
+  arrow_control->setMouseEnabled(false);
   context.column_elements.push_back(arrow_control);
 
   // 名前
