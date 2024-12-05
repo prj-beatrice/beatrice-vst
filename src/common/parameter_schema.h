@@ -9,6 +9,7 @@
 #include <utility>
 #include <variant>
 #include <vector>
+#include <functional>
 
 #include "common/error.h"
 #include "common/model_config.h"
@@ -53,7 +54,10 @@ enum class ParameterID : int {
   kPitchCorrection = 10,
   kPitchCorrectionType = 11,
   kAverageTargetPitchBase = 100,
-  kSentinel = kAverageTargetPitchBase + kMaxNSpeakers,
+  kVoiceMorphIndex = kAverageTargetPitchBase + kMaxNSpeakers,
+  kVoiceMorphWeights = kVoiceMorphIndex + 1,
+  kVoiceMorphLabels = kVoiceMorphWeights + kMaxNSpeakers,
+  kSentinel = kVoiceMorphLabels + kMaxNSpeakers,
 };
 
 class NumberParameter {
@@ -62,8 +66,8 @@ class NumberParameter {
       std::u8string name, const double default_value, const double min_value,
       const double max_value, std::u8string units, const int divisions,
       std::u8string short_name, const int flags,
-      ErrorCode (*const controller_set_value)(ControllerCore&, double),
-      ErrorCode (*const processor_set_value)(ProcessorProxy&, double))
+      const std::function<ErrorCode (ControllerCore&, double)> controller_set_value,
+      const std::function<ErrorCode (ProcessorProxy&, double)> processor_set_value) 
       : name_(std::move(name)),
         default_value_(default_value),
         min_value_(min_value),
@@ -110,8 +114,9 @@ class NumberParameter {
   int divisions_;
   std::u8string short_name_;
   int flags_;
-  ErrorCode (*controller_set_value_)(ControllerCore&, double);
-  ErrorCode (*const processor_set_value_)(ProcessorProxy&, double);
+  // キャプチャ付きのラムダ式も格納できるようにするため、関数ポインタから std::function に変更
+  const std::function<ErrorCode (ControllerCore&, double)> controller_set_value_;
+  const std::function<ErrorCode (ProcessorProxy&, double)> processor_set_value_; 
 };
 
 class ListParameter {
@@ -119,8 +124,8 @@ class ListParameter {
   inline ListParameter(
       std::u8string name, const std::vector<std::u8string>& values,
       const int default_value, std::u8string short_name, int flags,
-      ErrorCode (*const controller_set_value)(ControllerCore&, int),
-      ErrorCode (*const processor_set_value)(ProcessorProxy&, int))
+      const std::function<ErrorCode (ControllerCore&, int)> controller_set_value,
+      const std::function<ErrorCode (ProcessorProxy&, int)> processor_set_value) 
       : name_(std::move(name)),
         values_(values),
         default_value_(default_value),
@@ -160,8 +165,8 @@ class ListParameter {
   int default_value_;
   std::u8string short_name_;
   int flags_;
-  ErrorCode (*controller_set_value_)(ControllerCore&, int);
-  ErrorCode (*const processor_set_value_)(ProcessorProxy&, int);
+  std::function<ErrorCode (ControllerCore&, int)> controller_set_value_;
+  const std::function<ErrorCode (ProcessorProxy&, int)> processor_set_value_;
 };
 
 class StringParameter {
@@ -169,10 +174,8 @@ class StringParameter {
   inline StringParameter(
       std::u8string name, std::u8string default_value,
       const bool reset_when_model_load,
-      ErrorCode (*const controller_set_value)(ControllerCore&,
-                                              const std::u8string&),
-      ErrorCode (*const processor_set_value)(ProcessorProxy&,
-                                             const std::u8string&))
+      const std::function<ErrorCode (ControllerCore&, const std::u8string&)> controller_set_value,
+      const std::function<ErrorCode (ProcessorProxy&, const std::u8string&)> processor_set_value) 
       : name_(std::move(name)),
         default_value_(std::move(default_value)),
         reset_when_model_load_(reset_when_model_load),
@@ -200,9 +203,8 @@ class StringParameter {
   std::u8string name_;
   std::u8string default_value_;
   bool reset_when_model_load_;
-  ErrorCode (*controller_set_value_)(ControllerCore&, const std::u8string&);
-  ErrorCode (*const processor_set_value_)(ProcessorProxy&,
-                                          const std::u8string&);
+  std::function<ErrorCode (ControllerCore&, const std::u8string&)> controller_set_value_;
+  const std::function<ErrorCode (ProcessorProxy&, const std::u8string&)> processor_set_value_;
 };
 
 using ParameterVariant =

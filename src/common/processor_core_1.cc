@@ -6,6 +6,8 @@
 #include <cstring>
 #include <filesystem>
 
+#include <fstream>
+
 namespace beatrice::common {
 
 auto ProcessorCore1::GetVersion() const -> int { return 1; }
@@ -29,8 +31,7 @@ auto ProcessorCore1::Process(const float* const input, float* const output,
   if (target_speaker_ < 0) {
     return fill_zero(), ErrorCode::kSpeakerIDOutOfRange;
   }
-  if (target_speaker_ >= static_cast<int>(speaker_embeddings_.size()) /
-                             BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS) {
+  if (target_speaker_ > n_speakers_) {
     return fill_zero(), ErrorCode::kSpeakerIDOutOfRange;
   }
   if (pitch_correction_type_ < 0 || pitch_correction_type_ > 1) {
@@ -115,11 +116,27 @@ void ProcessorCore1::Process1(const float* const input, float* const output) {
   quantized_pitch =
       std::clamp(static_cast<int>(std::round(tmp_quantized_pitch)), 1,
                  BEATRICE_PITCH_BINS - 1);
-  std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker;
-  std::memcpy(speaker.data(),
-              &speaker_embeddings_[target_speaker_ *
-                                   BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS],
-              sizeof(float) * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+  std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker = {.0f};
+  if( target_speaker_ < n_speakers_ ){
+    std::memcpy(speaker.data(),
+                &speaker_embeddings_[target_speaker_ *
+                                    BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS],
+                sizeof(float) * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+  } else {
+    float sum_weights = .0f;
+    for( auto w : speaker_morphing_weights_ ){
+      sum_weights += w;
+    }
+    if( sum_weights > 0 ){
+      for( auto t = 0; t < n_speakers_; t++ ){
+        auto ratio = speaker_morphing_weights_[t] / sum_weights;
+        for( auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; i++ ){
+          speaker[i]+= ratio * speaker_embeddings_[ t * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS + i];
+        }
+      }
+    }
+  }
+
   for (auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; ++i) {
     speaker[i] += formant_shift_embeddings_
         [static_cast<int>(std::round(formant_shift_ * 2 + 4)) *
@@ -165,15 +182,15 @@ auto ProcessorCore1::LoadModel(const ModelConfig& /*config*/,
               (d / "waveform_generator.bin").u8string().c_str()))) {
     return static_cast<ErrorCode>(err);
   }
-  int n_speakers;
   if (const auto err = Beatrice20b1_ReadNSpeakers(
           reinterpret_cast<const char*>(
               (d / "speaker_embeddings.bin").u8string().c_str()),
-          &n_speakers)) {
+          &n_speakers_)) {
     return static_cast<ErrorCode>(err);
   }
-  speaker_embeddings_.resize(n_speakers *
+  speaker_embeddings_.resize( n_speakers_ *
                              BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+  speaker_morphing_weights_.resize( n_speakers_, 1.0f );
   if (const auto err = Beatrice20b1_ReadSpeakerEmbeddings(
           reinterpret_cast<const char*>(
               (d / "speaker_embeddings.bin").u8string().c_str()),
@@ -231,6 +248,16 @@ auto ProcessorCore1::SetInputGain(const double new_input_gain) -> ErrorCode {
 
 auto ProcessorCore1::SetOutputGain(const double new_output_gain) -> ErrorCode {
   output_gain_context_.SetTargetGain(new_output_gain);
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore1::SetSpeakerMorphingWeight(
+  int target_speaker_id, double morphing_weight
+) -> ErrorCode {
+  if( target_speaker_id < 0 || target_speaker_id >= n_speakers_ ){
+    return ErrorCode::kSpeakerIDOutOfRange;
+  }
+  speaker_morphing_weights_[target_speaker_id] = morphing_weight;
   return ErrorCode::kSuccess;
 }
 
