@@ -95,6 +95,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   CView* portrait_picture_view_;
   CMultiLineTextLabel* portrait_description_;
 
+  std::vector<CTextLabel*> morphing_labels_;
   VSTGUI::CScrollView* morphing_weights_view_;
 
   std::map<std::u8string, SharedPointer<CBitmap>> portraits_;

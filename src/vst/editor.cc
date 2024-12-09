@@ -60,6 +60,7 @@ Editor::Editor(void* const controller)
       tab_view_(),
       portrait_picture_view_(),
       portrait_description_(),
+      morphing_labels_(),
       morphing_weights_view_() {
   setRect(ViewRect(0, 0, kWindowWidth, kWindowHeight));
 }
@@ -334,9 +335,7 @@ void Editor::SyncModelDescription() {
       auto* const slider = static_cast<Slider*>(
           controls_.at(static_cast<ParamID>(
             static_cast<int>( ParameterID::kVoiceMorphWeights ) + i )) );
-      auto* const label = static_cast<CTextLabel*>(
-          controls_.at(static_cast<ParamID>(
-            static_cast<int>(ParameterID::kVoiceMorphLabels) + i )));
+      auto* const label = morphing_labels_[i];
       if( i < voice_counter ){
         slider->setVisible(true);
         label->setVisible(true);
@@ -350,6 +349,10 @@ void Editor::SyncModelDescription() {
       slider->setDirty();
       label->setDirty();
     }
+    auto container_size = morphing_weights_view_->getContainerSize();
+    container_size.setHeight( voice_counter * ( kElementHeight + kElementMerginY ));
+    morphing_weights_view_->setContainerSize(container_size);
+
     const auto voice_id =
         Denormalize(std::get<common::ListParameter>(
                         common::kSchema.GetParameter(ParameterID::kVoice)),
@@ -370,11 +373,7 @@ void Editor::SyncModelDescription() {
     }
     model_voice_description_.SetModelDescription(
         model_config_->model.description);
-
-    morphing_weights_view_->setContainerSize(
-      CRect(0, 0, kColumnWidth - 2 * ( kInnerColumnMerginX + kGroupIndentX ), 
-        voice_counter * ( kElementHeight + kElementMerginY ) )
-    );
+    
     portrait_picture_view_->setDirty();
     portrait_description_->setDirty();
     morphing_weights_view_->setDirty();
@@ -826,12 +825,12 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   morphing_view_->setBackgroundColor( context.column_back_color );
 
   auto* const spacer_view = new CView(
-    CRect( 0, 0, context.column_width, std::max( 0, kGroupLabelMerginY - kElementMerginY ))
+    CRect( 0, 0, context.column_width - offset_x, std::max( 0, kGroupLabelMerginY - kElementMerginY ))
   );
   morphing_view_->addView( spacer_view );
 
   auto* const group_label =
-      new CTextLabel(CRect(0, 0, context.column_width, kElementHeight)
+      new CTextLabel(CRect(0, 0, context.column_width - offset_x, kElementHeight)
                          .offset(offset_x, 0),
                      reinterpret_cast<const char*>((u8"⚙ Voice Morphing Weights")),
                      nullptr, CParamDisplay::kNoFrame);
@@ -843,7 +842,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   morphing_view_->addView( group_label );
 
   const auto size =  CRect(0, 0,
-          context.column_width - 2 * ( kInnerColumnMerginX ),
+          context.column_width - offset_x,
           kWindowHeight- kFooterHeight - kHeaderHeight - kGroupLabelMerginY - kElementHeight - kElementMerginY )
           .offset( offset_x, 0 );
   const auto container_size = CRect(0, 0,
@@ -854,7 +853,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
     | VSTGUI::CScrollView::kOverlayScrollbars | VSTGUI::CScrollView::kAutoHideScrollbars
   );
   morphing_weights_view_->setAutosizeFlags( VSTGUI::kAutosizeRow | VSTGUI::kAutosizeBottom );
-  morphing_weights_view_->setBackgroundColor(kTransparentCColor);
+  morphing_weights_view_->setBackgroundColor( kTransparentCColor );
   
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
   auto* const slider_bmp =
@@ -865,24 +864,18 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
                          kDarkColorScheme.secondary_dim, kTransparentCColor);
 
   for( auto i = 0; i < common::kMaxNSpeakers; i++ ){
-    auto const vst_param_id = static_cast<int>(ParameterID::kVoiceMorphLabels) + i;
-    auto const param_id = static_cast<ParameterID>(vst_param_id);
-    const auto param =
-        std::get<common::StringParameter>(common::kSchema.GetParameter(param_id));
     const auto label_pos = CRect(0, 0, kLabelWidth, kElementHeight)
                               .offset(0, i * ( kElementHeight + kElementMerginY ) );
-    const auto label_string = reinterpret_cast<const char*>( param.GetDefaultValue().c_str() );
+    const auto label_string = "";
     auto* const label_control = new CTextLabel(label_pos, label_string,
                                               nullptr, CParamDisplay::kNoFrame);
-    label_control->setTag( static_cast<int>(param_id ));
     label_control->setBackColor(kTransparentCColor);
     label_control->setFont(font_);
     label_control->setFontColor(kDarkColorScheme.on_surface);
     label_control->setHoriAlign(CHoriTxtAlign::kCenterText);
     label_control->setVisible(false);
-
+    morphing_labels_.push_back( label_control );
     morphing_weights_view_->addView( label_control );
-    controls_.insert({vst_param_id, label_control});
   }
   for( auto i = 0; i < common::kMaxNSpeakers; i++ ){
     auto const vst_param_id = static_cast<int>(ParameterID::kVoiceMorphWeights) + i;

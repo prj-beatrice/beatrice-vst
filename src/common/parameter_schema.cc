@@ -380,23 +380,6 @@ const ParameterSchema kSchema = [] {
             }
         ));
   }
-  for (auto i = 0; i < kMaxNSpeakers; ++i) {
-    const auto i_ascii = std::to_string(i);
-    const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
-    schema.AddParameter(
-        static_cast<ParameterID>(
-            static_cast<int>(ParameterID::kVoiceMorphLabels) + i),
-        StringParameter(
-            u8"Voice "s + i_u8 + u8"'s Weight"s,
-            u8""s, true,
-            [](ControllerCore& controller, const std::u8string& value) {
-              return ErrorCode::kSuccess;
-            },
-            [](ProcessorProxy& vc, const std::u8string& value) { 
-              return ErrorCode::kSuccess;
-            }
-        ));
-  }
 
   return schema;
 }();
