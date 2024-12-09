@@ -850,11 +850,15 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   morphing_weights_view_ = new VSTGUI::CScrollView(
     size, container_size,
     VSTGUI::CScrollView::kVerticalScrollbar | VSTGUI::CScrollView::kDontDrawFrame
-    | VSTGUI::CScrollView::kOverlayScrollbars | VSTGUI::CScrollView::kAutoHideScrollbars
+    | VSTGUI::CScrollView::kOverlayScrollbars
   );
   morphing_weights_view_->setAutosizeFlags( VSTGUI::kAutosizeRow | VSTGUI::kAutosizeBottom );
   morphing_weights_view_->setBackgroundColor( kTransparentCColor );
-  
+  auto scroll_bar = morphing_weights_view_->getVerticalScrollbar();
+  scroll_bar->setFrameColor(kDarkColorScheme.outline);
+  scroll_bar->setScrollerColor( kDarkColorScheme.secondary_dim );
+  scroll_bar->setBackgroundColor(kTransparentCColor);
+
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
   auto* const slider_bmp =
       new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
@@ -863,16 +867,18 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
       new MonotoneBitmap(kHandleWidth, kElementHeight,
                          kDarkColorScheme.secondary_dim, kTransparentCColor);
 
+  const auto label_width = morphing_weights_view_->getWidth() - kElementWidth - kElementMerginX
+                            - morphing_weights_view_->getScrollbarWidth();
   for( auto i = 0; i < common::kMaxNSpeakers; i++ ){
-    const auto label_pos = CRect(0, 0, kLabelWidth, kElementHeight)
-                              .offset(0, i * ( kElementHeight + kElementMerginY ) );
-    const auto label_string = "";
-    auto* const label_control = new CTextLabel(label_pos, label_string,
+    const auto label_pos = CRect(0, 0, label_width, kElementHeight)
+                              .offset(kElementWidth + kElementMerginX + offset_x,
+                               i * ( kElementHeight + kElementMerginY ) );
+    auto* const label_control = new CTextLabel(label_pos, "",
                                               nullptr, CParamDisplay::kNoFrame);
     label_control->setBackColor(kTransparentCColor);
     label_control->setFont(font_);
     label_control->setFontColor(kDarkColorScheme.on_surface);
-    label_control->setHoriAlign(CHoriTxtAlign::kCenterText);
+    label_control->setHoriAlign(CHoriTxtAlign::kLeftText);
     label_control->setVisible(false);
     morphing_labels_.push_back( label_control );
     morphing_weights_view_->addView( label_control );
@@ -882,14 +888,11 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
     auto const param_id = static_cast<ParamID>(vst_param_id);
     auto* const param =
         static_cast<LinearParameter*>(controller->getParameterObject(param_id));
-    const auto slider_offset_x = kLabelWidth + kElementMerginX;
-    const auto slider_width = morphing_weights_view_->getWidth() - slider_offset_x
-                             - morphing_weights_view_->getScrollbarWidth();
     auto* const slider_control = new Slider(
-        CRect(0, 0, slider_width, kElementHeight)
-        .offset( slider_offset_x, i * ( kElementHeight + kElementMerginY ) ),
-        this, static_cast<int>(param_id), slider_offset_x,
-        slider_offset_x + slider_width - kHandleWidth, handle_bmp, slider_bmp,
+        CRect(0, 0, kElementWidth, kElementHeight)
+        .offset( offset_x, i * ( kElementHeight + kElementMerginY ) ),
+        this, static_cast<int>(param_id), offset_x,
+        offset_x + kElementWidth - kHandleWidth, handle_bmp, slider_bmp,
         Steinberg::Vst::StringConvert::convert(param->getInfo().units), font_, 2);
     slider_control->setValueNormalized(
         static_cast<float>(param->getNormalized()));
