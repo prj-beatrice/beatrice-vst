@@ -53,10 +53,9 @@ enum class ParameterID : int {
   kIntonationIntensity = 9,
   kPitchCorrection = 10,
   kPitchCorrectionType = 11,
-  kAverageTargetPitchBase = 100,
-  kVoiceMorphIndex = kAverageTargetPitchBase + kMaxNSpeakers,
-  kVoiceMorphWeights = kVoiceMorphIndex + 1,
-  kVoiceMorphLabels = kVoiceMorphWeights + kMaxNSpeakers,
+  kAverageTargetPitchBase = 100, // Voice Morphing Mode の分も格納するため、要素数は ( kMaxNSpeakers + 1 ) となる
+  kVoiceMorphWeights = kAverageTargetPitchBase + ( kMaxNSpeakers + 1 ), // Voice Morphing Mode の重みを保存するのに使う
+  kVoiceMorphLabels = kVoiceMorphWeights + kMaxNSpeakers, // Voice Morphing Mode の各スライダーのラベルを保存するのに使う
   kSentinel = kVoiceMorphLabels + kMaxNSpeakers,
 };
 

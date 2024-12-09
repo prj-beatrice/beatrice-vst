@@ -190,12 +190,21 @@ void Editor::SyncValue(const ParamID param_id,
     // controller と editor で最大値が異なるため
     // setValueNormalized は正しく動かない
     control->setValue(static_cast<float>(voice_id));
-    portrait_picture_view_->setBackground(
-        portraits_.at(model_config_->voices[voice_id].portrait.path).get());
-    portrait_description_->setText(reinterpret_cast<const char*>(
-        model_config_->voices[voice_id].portrait.description.c_str()));
-    model_voice_description_.SetVoiceDescription(
-        model_config_->voices[voice_id].description);
+    if( voice_id < static_cast<int>( control->getMax() ) ){
+      portrait_picture_view_->setBackground(
+          portraits_.at(model_config_->voices[voice_id].portrait.path).get());
+      portrait_description_->setText(reinterpret_cast<const char*>(
+          model_config_->voices[voice_id].portrait.description.c_str()));
+      model_voice_description_.SetVoiceDescription(
+          model_config_->voices[voice_id].description);
+      tab_view_->selectTab( 0 );
+    }else{
+      portrait_picture_view_->setBackground( nullptr );
+      portrait_description_->setText("");
+      model_voice_description_.SetVoiceDescription(
+          u8"< Voice Morphing Mode >");
+      tab_view_->selectTab( 1 );
+    }
   } else {
     control->setValueNormalized(static_cast<float>(normalized_value));
   }
@@ -258,18 +267,11 @@ void Editor::SyncModelDescription() {
         reinterpret_cast<const char*>(model_config_->model.name.c_str()));
     // 話者のリストを読み込む。
     // また、予め portrait を読み込んで、必要に応じてリサイズしておく。
-    bool isFirstEmpty = true;
     int voice_counter = 0;
     for (const auto& voice : model_config_->voices) {
       if (voice.name.empty() && voice.description.empty() &&
           voice.portrait.path.empty() && voice.portrait.description.empty()) {
-        if( isFirstEmpty ){
-          isFirstEmpty = false;
-          voice_combobox->addEntry("Voice Morphing Mode");
-          goto load_portrait_failed;
-        }else{
           break;
-        }
       }
       voice_counter++;
       voice_combobox->addEntry(
@@ -323,6 +325,10 @@ void Editor::SyncModelDescription() {
       portraits_.insert({voice.portrait.path, nullptr});
     load_portrait_succeeded: {}
     }
+
+    voice_combobox->addEntry("Voice Morphing Mode");
+    portraits_.insert({u8"", nullptr});
+
     voice_combobox->setDirty();
     for( auto i = 0; i < common::kMaxNSpeakers; i++ ){
       auto* const slider = static_cast<Slider*>(
@@ -349,23 +355,26 @@ void Editor::SyncModelDescription() {
                         common::kSchema.GetParameter(ParameterID::kVoice)),
                     controller->getParamNormalized(
                         static_cast<ParamID>(ParameterID::kVoice)));
-    const auto& voice = model_config_->voices[voice_id];
-    portrait_picture_view_->setBackground(portraits_.at(voice.portrait.path).get());
-    portrait_description_->setText(
-        reinterpret_cast<const char*>(voice.portrait.description.c_str()));
+    if( voice_id < voice_counter ){
+      const auto& voice = model_config_->voices[voice_id];
+      portrait_picture_view_->setBackground(portraits_.at(voice.portrait.path).get());
+      portrait_description_->setText(
+          reinterpret_cast<const char*>(voice.portrait.description.c_str()));
+      model_voice_description_.SetVoiceDescription(voice.description);
+      tab_view_->selectTab( 0 );
+    }else{
+      portrait_picture_view_->setBackground(nullptr);
+      portrait_description_->setText("");
+      model_voice_description_.SetVoiceDescription(u8"< Voice Morphing Mode >");
+      tab_view_->selectTab( 1 );
+    }
     model_voice_description_.SetModelDescription(
         model_config_->model.description);
-    model_voice_description_.SetVoiceDescription(voice.description);
 
     morphing_weights_view_->setContainerSize(
       CRect(0, 0, kColumnWidth - 2 * ( kInnerColumnMerginX + kGroupIndentX ), 
         voice_counter * ( kElementHeight + kElementMerginY ) )
     );
-    if( voice_id == voice_counter){
-      tab_view_->selectTab( 1 );
-    }else{
-      tab_view_->selectTab( 0 );
-    }
     portrait_picture_view_->setDirty();
     portrait_description_->setDirty();
     morphing_weights_view_->setDirty();
@@ -420,7 +429,7 @@ void Editor::valueChanged(CControl* const pControl) {
     assert(list_param);
     const auto plain_value = static_cast<int>(control->getValue());
     if( vst_param_id == static_cast<int>(ParameterID::kVoice)){
-      if( plain_value == static_cast<int>(control->getMax()) && plain_value < common::kMaxNSpeakers-1 ){
+      if( plain_value == static_cast<int>(control->getMax()) ){
         tab_view_->selectTab(1);
       }else{
         tab_view_->selectTab(0);

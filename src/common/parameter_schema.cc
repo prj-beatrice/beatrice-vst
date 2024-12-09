@@ -49,28 +49,7 @@ const ParameterSchema kSchema = [] {
                                                   0.0);
              controller.updated_parameters_.push_back(
                  ParameterID::kFormantShift);
-             // Voice Morph Index
-             
-             auto voice_morph_id = kMaxNSpeakers;
-             for ( auto i = 0; i < kMaxNSpeakers; ++i ) {
-                const auto& voice = model_config.voices[i];
-                if (voice.name.empty() && voice.description.empty() &&
-                    voice.portrait.path.empty() && voice.portrait.description.empty()) {
-                  voice_morph_id = i;
-                  break;
-                }
-             }
-             
-             controller.parameter_state_.SetValue(ParameterID::kVoiceMorphIndex, (double)voice_morph_id);
-             controller.updated_parameters_.push_back(ParameterID::kVoiceMorphIndex);
-             if( voice_morph_id < kMaxNSpeakers ){
-              double morphed_average_pitch = 0;
-              for (auto i = 0; i < voice_morph_id; ++i) {
-                morphed_average_pitch += model_config.voices[i].average_pitch;
-              }
-              morphed_average_pitch /= voice_morph_id;
-              model_config.voices[voice_morph_id].average_pitch = morphed_average_pitch;
-             }
+
              // AverageTargetPitches
              for (auto i = 0; i < kMaxNSpeakers; ++i) {
                controller.parameter_state_.SetValue(
@@ -83,6 +62,34 @@ const ParameterSchema kSchema = [] {
                        static_cast<int>(ParameterID::kAverageTargetPitchBase) +
                        i));
              }
+
+             // Voice Morph の AverageTargetPitch を計算
+             // 今のところは各 Voice の値の単純平均を採用することとする
+             auto voice_counter = kMaxNSpeakers;
+             for ( auto i = 0; i < kMaxNSpeakers; ++i ) {
+                const auto& voice = model_config.voices[i];
+                if (voice.name.empty() && voice.description.empty() &&
+                    voice.portrait.path.empty() && voice.portrait.description.empty()) {
+                  voice_counter = i;
+                  break;
+                }
+             }
+             double morphed_average_pitch = 0;
+             for (auto i = 0; i < voice_counter; ++i) {
+               morphed_average_pitch += model_config.voices[i].average_pitch;
+             }
+             morphed_average_pitch /= voice_counter;
+             controller.parameter_state_.SetValue(
+                static_cast<ParameterID>(
+                    static_cast<int>(ParameterID::kAverageTargetPitchBase) +
+                    voice_counter),
+                morphed_average_pitch);
+             controller.updated_parameters_.push_back(
+                static_cast<ParameterID>(
+                    static_cast<int>(ParameterID::kAverageTargetPitchBase) +
+                    voice_counter));
+
+
              // kVoiceMorphWeightss
              for (auto i = 0; i < kMaxNSpeakers; ++i) {
                controller.parameter_state_.SetValue(
@@ -146,7 +153,7 @@ const ParameterSchema kSchema = [] {
            }(),
            0, u8"Voi"s, parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const int value) {
-             if (value < 0 || value >= kMaxNSpeakers) {
+             if (value < 0 || value > kMaxNSpeakers) {
                return ErrorCode::kSpeakerIDOutOfRange;
              }
              const auto formant_shift =
@@ -337,16 +344,9 @@ const ParameterSchema kSchema = [] {
            [](ProcessorProxy& vc, const int value) {
              return vc.GetCore()->SetPitchCorrectionType(value);
            })},
-      {ParameterID::kVoiceMorphIndex,
-        NumberParameter(
-            u8"VoiceMorphIndex"s, kMaxNSpeakers, 0.0, kMaxNSpeakers, u8""s, kMaxNSpeakers, u8"MrphID"s,
-            parameter_flag::kIsReadOnly | parameter_flag::kIsHidden,
-            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
-            [](ProcessorProxy&, double) { return ErrorCode::kSuccess; }
-        )},
   });
 
-  for (auto i = 0; i < kMaxNSpeakers; ++i) {
+  for (auto i = 0; i < kMaxNSpeakers + 1; ++i) { // Voice Morphing Mode の分も格納するため、要素数は ( kMaxNSpeakers + 1 ) となる
     const auto i_ascii = std::to_string(i);
     const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
     schema.AddParameter(
@@ -358,7 +358,7 @@ const ParameterSchema kSchema = [] {
             [](ControllerCore&, double) { return ErrorCode::kSuccess; },
             [](ProcessorProxy&, double) { return ErrorCode::kSuccess; }));
   }
-  for (auto i = 0; i < kMaxNSpeakers; ++i) {
+  for (auto i = 0; i < kMaxNSpeakers; ++i) { // こちらの要素数は kMaxNSpeakers で良い
     const auto i_ascii = std::to_string(i);
     const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
     schema.AddParameter(
@@ -368,34 +368,8 @@ const ParameterSchema kSchema = [] {
             u8"Voice "s + i_u8 + u8"'s Weight"s , 0.0, 0.0, 1.0, u8""s, 100, u8"VcWght"s,
             parameter_flag::kCanAutomate,
             [](ControllerCore& controller, double value) {
-              /*
               // マージの比率に応じて AverageTargetPitchBase も変える？
-              // ここまでする必要ってあるのかな？
-              auto voice_morph_id = static_cast<int>( std::get<double>(
-                controller.parameter_state_.GetValue( ParameterID::kVoiceMorphIndex )) );
-              double weighted_average_pitch = 0.0;
-              double simple_average_pitch = 0.0;
-              double sum_weights = 0.0;
-              for( auto i = 0; i < voice_morph_id; i++){
-                auto weight = std::get<double>(
-                  controller.parameter_state_.GetValue(static_cast<ParameterID>(
-                    static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-                auto avg_pitch = std::get<double>(
-                  controller.parameter_state_.GetValue(static_cast<ParameterID>(
-                    static_cast<int>(ParameterID::kAverageTargetPitchBase) + i)));
-                weighted_average_pitch += weight * avg_pitch;
-                simple_average_pitch += avg_pitch;
-                sum_weights += weight;
-              }
-              if( sum_weights > 0 ){
-                weighted_average_pitch /= sum_weights;
-              }else{
-                weighted_average_pitch = simple_average_pitch / voice_morph_id;
-              }
-              controller.parameter_state_.SetValue(static_cast<ParameterID>(
-                static_cast<int>(ParameterID::kAverageTargetPitchBase) + voice_morph_id),
-                weighted_average_pitch);
-              */
+              // そこまでする必要は無さそうに感じたので、とりあえず保留。
               return ErrorCode::kSuccess;
             },
             // ここ、NumberParameter::processor_set_value_ が関数ポインタのままだと

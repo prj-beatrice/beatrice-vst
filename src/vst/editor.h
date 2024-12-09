@@ -56,7 +56,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   static constexpr auto kElementMerginX = 8;
   static constexpr auto kLabelWidth = kColumnWidth - 2 * ( kInnerColumnMerginX + kGroupIndentX ) - kElementWidth - kElementMerginX;
   static constexpr auto kPortraitColumnWidth = kWindowWidth - 2 * ( kColumnWidth + kColumnMerginX );
-  static constexpr auto kPortraitWidth = kPortraitColumnWidth - 2 * ( kInnerColumnMerginX + kGroupIndentX + kElementMerginX );
+  static constexpr auto kPortraitWidth = kPortraitColumnWidth;
   static constexpr auto kPortraitHeight = kPortraitWidth;
   struct Context {
     int y = kHeaderHeight + kColumnMerginY;
