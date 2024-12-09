@@ -20,6 +20,9 @@
 #include "vst3sdk/vstgui4/vstgui/lib/platform/platformfactory.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
+#include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
+#include "vst3sdk/vstgui4/vstgui/lib/crowcolumnview.h"
+
 // Beatrice
 #include "common/error.h"
 #include "common/parameter_schema.h"
@@ -54,7 +57,8 @@ Editor::Editor(void* const controller)
     : VSTGUIEditor(controller),
       font_(new CFontDesc(kNormalFont->getName(), 14)),
       font_bold_(new CFontDesc(kNormalFont->getName(), 14, kBoldFace)),
-      portrait_view_(),
+      tab_view_(),
+      portrait_picture_view_(),
       portrait_description_(),
       morphing_weights_view_() {
   setRect(ViewRect(0, 0, kWindowWidth, kWindowHeight));
@@ -124,9 +128,6 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
                kTransparentCColor, kDarkColorScheme.on_surface);
   EndGroup(context);
-  BeginGroup(context, u8"Morphing Weights");
-  MakeVoiceMorphingView(context);
-  EndGroup(context);
   EndColumn(context);
 
   BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_2);
@@ -139,10 +140,10 @@ auto PLUGIN_API Editor::open(void* const parent,
   EndGroup(context);
   EndColumn(context);
 
-  BeginColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
-  MakePortraitView(context);
-  MakePortraitDescription(context);
-  EndColumn(context);
+  BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
+  MakePortraitViewAndDescription(context);
+  MakeVoiceMorphingView(context);
+  EndTabColumn(context);
 
   // 1 要素 1 クラスの方が良かったのか？？？
 
@@ -159,10 +160,12 @@ auto PLUGIN_API Editor::open(void* const parent,
 
 void PLUGIN_API Editor::close() {
   if (frame) {
+    tab_view_->removeAllTabs();
     frame->forget();
     frame = nullptr;
     portraits_.clear();
-    portrait_view_ = nullptr;
+    tab_view_ = nullptr;
+    portrait_picture_view_ = nullptr;
     portrait_description_ = nullptr;
     morphing_weights_view_ = nullptr;
   }
@@ -187,7 +190,7 @@ void Editor::SyncValue(const ParamID param_id,
     // controller と editor で最大値が異なるため
     // setValueNormalized は正しく動かない
     control->setValue(static_cast<float>(voice_id));
-    portrait_view_->setBackground(
+    portrait_picture_view_->setBackground(
         portraits_.at(model_config_->voices[voice_id].portrait.path).get());
     portrait_description_->setText(reinterpret_cast<const char*>(
         model_config_->voices[voice_id].portrait.description.c_str()));
@@ -347,7 +350,7 @@ void Editor::SyncModelDescription() {
                     controller->getParamNormalized(
                         static_cast<ParamID>(ParameterID::kVoice)));
     const auto& voice = model_config_->voices[voice_id];
-    portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
+    portrait_picture_view_->setBackground(portraits_.at(voice.portrait.path).get());
     portrait_description_->setText(
         reinterpret_cast<const char*>(voice.portrait.description.c_str()));
     model_voice_description_.SetModelDescription(
@@ -359,15 +362,11 @@ void Editor::SyncModelDescription() {
         voice_counter * ( kElementHeight + kElementMerginY ) )
     );
     if( voice_id == voice_counter){
-      morphing_weights_view_->setVisible(true);
-      portrait_view_->setVisible(false);
-      portrait_description_->setVisible(false);
+      tab_view_->selectTab( 1 );
     }else{
-      morphing_weights_view_->setVisible(false);
-      portrait_view_->setVisible(true);
-      portrait_description_->setVisible(true);
+      tab_view_->selectTab( 0 );
     }
-    portrait_view_->setDirty();
+    portrait_picture_view_->setDirty();
     portrait_description_->setDirty();
     morphing_weights_view_->setDirty();
 
@@ -422,13 +421,9 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto plain_value = static_cast<int>(control->getValue());
     if( vst_param_id == static_cast<int>(ParameterID::kVoice)){
       if( plain_value == static_cast<int>(control->getMax()) && plain_value < common::kMaxNSpeakers-1 ){
-        morphing_weights_view_->setVisible(true);
-        portrait_view_->setVisible(false);
-        portrait_description_->setVisible(false);
+        tab_view_->selectTab(1);
       }else{
-        morphing_weights_view_->setVisible(false);
-        portrait_view_->setVisible(true);
-        portrait_description_->setVisible(true);
+        tab_view_->selectTab(0);
       }
     }
     if (plain_value ==
@@ -527,6 +522,43 @@ auto Editor::EndColumn(Context& context) -> CView* {
   context.last_element_mergin = 0;
   context.first_group = true;
   return column;
+}
+
+void Editor::BeginTabColumn(Context& context, const int width,
+                         const CColor& back_color) {
+  context.column_width = width;
+  context.column_back_color = back_color;
+  context.column_start_y = context.y;
+  context.column_start_x = context.x;
+  context.y = 0;
+  context.x = 0;
+  context.last_element_mergin = kInnerColumnMerginY;
+  context.x += kInnerColumnMerginX;
+}
+
+auto Editor::EndTabColumn(Context& context) -> CView* {
+  // const auto bottom =
+  //     context.y + std::max(context.last_element_mergin,
+  //     kInnerColumnMerginY);
+  const auto bottom = kWindowHeight - kFooterHeight;
+  tab_view_ = new VSTGUI::CTabView(
+      CRect(context.column_start_x, kHeaderHeight,
+            context.column_start_x + context.column_width, bottom),
+      CRect(context.column_start_x, kHeaderHeight,
+            context.column_start_x + context.column_width, kHeaderHeight));
+
+  frame->addView(tab_view_);
+  for (auto&& element : context.column_elements) {
+    tab_view_->addTab(element);
+  }
+  context.column_elements.clear();
+  context.y = kHeaderHeight;
+  context.x = context.column_start_x + context.column_width + kColumnMerginX;
+  context.column_start_y = -1;
+  context.column_start_x = -1;
+  context.last_element_mergin = 0;
+  context.first_group = true;
+  return tab_view_;
 }
 
 auto Editor::BeginGroup(Context& context, const std::u8string& name) -> CView* {
@@ -723,11 +755,33 @@ auto Editor::MakeFileSelector(Context& context,
   return control;
 }
 
-auto Editor::MakePortraitView(Context& context) -> CView* {
-  portrait_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
+auto Editor::MakePortraitViewAndDescription(Context& context) -> CView* {
+
+  const auto offset_x = context.x;
+  auto* portrait_view_ = new VSTGUI::CRowColumnView(
+    CRect( context.x, context.y, context.column_width - offset_x,
+      kWindowHeight - kFooterHeight));
+  portrait_view_->setSpacing( kElementMerginY );
+  portrait_view_->setBackgroundColor( context.column_back_color );
+
+  portrait_picture_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
+  portrait_view_->addView( portrait_picture_view_ );
+
+  auto* const description = new CMultiLineTextLabel(
+      CRect(context.x, context.y + kPortraitHeight + kElementMerginY,
+            context.column_width - offset_x,
+            kWindowHeight - kFooterHeight));
+  description->setFont(font_);
+  description->setFontColor(kDarkColorScheme.on_surface);
+  description->setBackColor(kTransparentCColor);
+  description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
+  description->setStyle(CParamDisplay::kNoFrame);
+  description->setHoriAlign(CHoriTxtAlign::kLeftText);
+  portrait_description_ = description;
+  portrait_view_->addView( portrait_description_ );
+
   context.column_elements.push_back(portrait_view_);
-  context.y += kPortraitHeight;
-  context.last_element_mergin = kElementMerginY;
+
   return portrait_view_;
 }
 
@@ -752,32 +806,37 @@ auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
   return nullptr;
 }
 
-auto Editor::MakePortraitDescription(Context& context) -> CView* {
-  context.y += std::max(context.last_element_mergin, kElementMerginY);
-  const auto offset_x = context.x;
-  auto* const description = new CMultiLineTextLabel(
-      CRect(context.x, context.y, context.column_width - offset_x,
-            kWindowHeight - kFooterHeight));
-  description->setFont(font_);
-  description->setFontColor(kDarkColorScheme.on_surface);
-  description->setBackColor(kTransparentCColor);
-  description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
-  description->setStyle(CParamDisplay::kNoFrame);
-  description->setHoriAlign(CHoriTxtAlign::kLeftText);
-  portrait_description_ = description;
-
-  context.column_elements.push_back(description);
-  context.y = kWindowHeight - kFooterHeight;
-  context.last_element_mergin = kElementMerginY;
-  return description;
-}
-
-
 auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
-  context.y += std::max(context.last_element_mergin, kElementMerginY);
+
+  const auto offset_x = context.x;
+  auto* morphing_view_ = new VSTGUI::CRowColumnView(
+    CRect( context.x, context.y,
+      context.column_width - offset_x,
+      kWindowHeight - kFooterHeight));
+  morphing_view_->setSpacing( kElementMerginY );
+  morphing_view_->setBackgroundColor( context.column_back_color );
+
+  auto* const spacer_view = new CView(
+    CRect( 0, 0, context.column_width, std::max( 0, kGroupLabelMerginY - kElementMerginY ))
+  );
+  morphing_view_->addView( spacer_view );
+
+  auto* const group_label =
+      new CTextLabel(CRect(0, 0, context.column_width, kElementHeight)
+                         .offset(offset_x, 0),
+                     reinterpret_cast<const char*>((u8"⚙ Voice Morphing Weights")),
+                     nullptr, CParamDisplay::kNoFrame);
+  group_label->setBackColor(kTransparentCColor);
+  group_label->setFont(font_bold_);
+  group_label->setFontColor(kDarkColorScheme.on_surface);
+  group_label->setHoriAlign(CHoriTxtAlign::kLeftText);
+
+  morphing_view_->addView( group_label );
+
   const auto size =  CRect(0, 0,
-          kColumnWidth - 2 * ( kInnerColumnMerginX ),
-          kWindowHeight- kFooterHeight - kHeaderHeight - context.y ).offset( context.x, context.y );
+          context.column_width - 2 * ( kInnerColumnMerginX ),
+          kWindowHeight- kFooterHeight - kHeaderHeight - kGroupLabelMerginY - kElementHeight - kElementMerginY )
+          .offset( offset_x, 0 );
   const auto container_size = CRect(0, 0,
           size.getWidth(), ( kElementHeight + kElementMerginY ) * common::kMaxNSpeakers );
   morphing_weights_view_ = new VSTGUI::CScrollView(
@@ -822,9 +881,10 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
     auto* const param =
         static_cast<LinearParameter*>(controller->getParameterObject(param_id));
     const auto slider_offset_x = kLabelWidth + kElementMerginX;
-    const auto slider_width = kElementWidth - morphing_weights_view_->getScrollbarWidth();
+    const auto slider_width = morphing_weights_view_->getWidth() - slider_offset_x
+                             - morphing_weights_view_->getScrollbarWidth();
     auto* const slider_control = new Slider(
-        CRect(0, 0, kElementWidth - morphing_weights_view_->getScrollbarWidth(), kElementHeight)
+        CRect(0, 0, slider_width, kElementHeight)
         .offset( slider_offset_x, i * ( kElementHeight + kElementMerginY ) ),
         this, static_cast<int>(param_id), slider_offset_x,
         slider_offset_x + slider_width - kHandleWidth, handle_bmp, slider_bmp,
@@ -839,11 +899,10 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
 
   slider_bmp->forget();
   handle_bmp->forget();
+  morphing_view_->addView( morphing_weights_view_ );
 
-  morphing_weights_view_->setVisible(false);
-
-  context.column_elements.push_back( morphing_weights_view_ );
-  return morphing_weights_view_;
+  context.column_elements.push_back( morphing_view_ );
+  return morphing_view_;
 }
 
 
