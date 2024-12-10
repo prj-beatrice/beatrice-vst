@@ -776,26 +776,6 @@ auto Editor::MakePortraitView(Context& context) -> CView* {
   return portraig_view_;
 }
 
-auto Editor::MakePortraitDescription(Context& context) -> CView* {
-  context.y += std::max(context.last_element_mergin, 24);
-  const auto offset_x = context.x;
-  auto* const description = new CMultiLineTextLabel(
-      CRect(context.x, context.y, context.column_width - offset_x,
-            kWindowHeight - kFooterHeight));
-  description->setFont(font_);
-  description->setFontColor(kDarkColorScheme.on_surface);
-  description->setBackColor(kTransparentCColor);
-  description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
-  description->setStyle(CParamDisplay::kNoFrame);
-  description->setHoriAlign(CHoriTxtAlign::kLeftText);
-  portrait_description_ = description;
-  context.column_elements.push_back(portrait_description_);
-
-  context.y = kWindowHeight - kFooterHeight;
-  context.last_element_mergin = kElementMerginY;
-  return description;
-}
-
 auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
   context.y += std::max(context.last_element_mergin, 24);
   const auto offset_x = context.x;
@@ -815,6 +795,26 @@ auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
       model_voice_description_.voice_description_);
 
   return nullptr;
+}
+
+auto Editor::MakePortraitDescription(Context& context) -> CView* {
+  context.y += std::max(context.last_element_mergin, 24);
+  const auto offset_x = context.x;
+  auto* const description = new CMultiLineTextLabel(
+      CRect(context.x, context.y, context.column_width - offset_x,
+            kWindowHeight - kFooterHeight));
+  description->setFont(font_);
+  description->setFontColor(kDarkColorScheme.on_surface);
+  description->setBackColor(kTransparentCColor);
+  description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
+  description->setStyle(CParamDisplay::kNoFrame);
+  description->setHoriAlign(CHoriTxtAlign::kLeftText);
+  portrait_description_ = description;
+  context.column_elements.push_back(portrait_description_);
+
+  context.y = kWindowHeight - kFooterHeight;
+  context.last_element_mergin = kElementMerginY;
+  return description;
 }
 
 auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
