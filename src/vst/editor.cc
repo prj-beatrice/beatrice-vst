@@ -873,7 +873,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
         .offset( 0, i * ( kElementHeight + kElementMerginY ) ),
         this, static_cast<int>(param_id), 0,
         kElementWidth - kHandleWidth, handle_bmp, slider_bmp,
-        Steinberg::Vst::StringConvert::convert(param->getInfo().units), font_, 2);
+        VST3::StringConvert::convert(param->getInfo().units), font_, 2);
     slider_control->setValueNormalized(
         static_cast<float>(param->getNormalized()));
     slider_control->setVisible(false);
