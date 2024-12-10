@@ -57,6 +57,9 @@ class ProcessorCore1 : public ProcessorCoreBase {
   auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode override;
   auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode override;
+  auto SetSpeakerMorphingWeight(
+    int /*target_speaker*/, double /*morphing weight*/
+  ) -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {
@@ -72,6 +75,7 @@ class ProcessorCore1 : public ProcessorCoreBase {
   int target_speaker_ = 0;
   double formant_shift_ = 0.0;
   double pitch_shift_ = 0.0;
+  int n_speakers_ = 0;
   double average_source_pitch_ = 52.0;
   double intonation_intensity_ = 1.0;
   double pitch_correction_ = 0.0;
@@ -92,6 +96,7 @@ class ProcessorCore1 : public ProcessorCoreBase {
   Beatrice20b1_WaveformContext1* waveform_context_;
   Gain::Context input_gain_context_;
   Gain::Context output_gain_context_;
+  std::vector<float> speaker_morphing_weights_;
 
   inline auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);
