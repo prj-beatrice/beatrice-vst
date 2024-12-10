@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
-#include <string>
 
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
@@ -48,8 +47,6 @@ using VSTGUI::CViewContainer;
 using VSTGUI::getPlatformFactory;
 using VSTGUI::kBoldFace;
 using VSTGUI::kNormalFont;
-
-using std::operator""s;
 
 namespace BitmapFilter = VSTGUI::BitmapFilter;
 
@@ -142,7 +139,8 @@ auto PLUGIN_API Editor::open(void* const parent,
   EndColumn(context);
 
   BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
-  MakePortraitViewAndDescription(context);
+  MakePortraitView(context);
+  MakePortraitDescription(context);
   EndTabColumn(context);
 
   BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
@@ -277,7 +275,7 @@ void Editor::SyncModelDescription() {
     for (const auto& voice : model_config_->voices) {
       if (voice.name.empty() && voice.description.empty() &&
           voice.portrait.path.empty() && voice.portrait.description.empty()) {
-          break;
+        break;
       }
       voice_counter++;
       voice_combobox->addEntry(
@@ -600,10 +598,7 @@ auto Editor::BeginGroup(Context& context, const std::u8string& name) -> CView* {
   return group_label;
 }
 
-void Editor::EndGroup(Context& context) {
-   context.x -= kGroupIndentX;
-   context.y += kElementMerginY;
-}
+void Editor::EndGroup(Context& context) { context.x -= kGroupIndentX; }
 
 // NumberParameter 用
 auto Editor::MakeSlider(Context& context, const ParamID param_id,
@@ -772,15 +767,20 @@ auto Editor::MakeFileSelector(Context& context,
   return control;
 }
 
-auto Editor::MakePortraitViewAndDescription(Context& context) -> CView* {
+auto Editor::MakePortraitView(Context& context) -> CView* {
 
-  const auto offset_x = context.x;
   portraig_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
   context.column_elements.push_back(portraig_view_);
+  context.y += kPortraitHeight;
+  context.last_element_mergin = kElementMerginY;
+  return portraig_view_;
+}
 
+auto Editor::MakePortraitDescription(Context& context) -> CView* {
+  context.y += std::max(context.last_element_mergin, 24);
+  const auto offset_x = context.x;
   auto* const description = new CMultiLineTextLabel(
-      CRect(context.x, context.y + kPortraitHeight + kElementMerginY,
-            context.column_width - offset_x,
+      CRect(context.x, context.y, context.column_width - offset_x,
             kWindowHeight - kFooterHeight));
   description->setFont(font_);
   description->setFontColor(kDarkColorScheme.on_surface);
@@ -791,7 +791,9 @@ auto Editor::MakePortraitViewAndDescription(Context& context) -> CView* {
   portrait_description_ = description;
   context.column_elements.push_back(portrait_description_);
 
-  return portraig_view_;
+  context.y = kWindowHeight - kFooterHeight;
+  context.last_element_mergin = kElementMerginY;
+  return description;
 }
 
 auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {

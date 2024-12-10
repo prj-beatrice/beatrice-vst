@@ -6,8 +6,6 @@
 #include <cstring>
 #include <filesystem>
 
-#include <fstream>
-
 namespace beatrice::common {
 
 auto ProcessorCore1::GetVersion() const -> int { return 1; }
