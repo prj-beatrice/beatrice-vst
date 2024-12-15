@@ -126,11 +126,24 @@ void ProcessorCore1::Process1(const float* const input, float* const output) {
       sum_weights += w;
     }
     if( sum_weights > 0 ){
+      auto norm_avg = 0.0f;
       for( auto t = 0; t < n_speakers_; t++ ){
         auto ratio = speaker_morphing_weights_[t] / sum_weights;
+        auto norm = 0.0f;
         for( auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; i++ ){
           speaker[i]+= ratio * speaker_embeddings_[ t * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS + i];
+          norm += ratio * speaker_embeddings_[ t * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS + i] 
+            * speaker_embeddings_[ t * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS + i];
         }
+        norm_avg += ratio * norm;
+      }
+      auto norm_merged = 0.0f;
+      for( auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; i++ ){
+        norm_merged += speaker[i] * speaker[i];
+      }
+      auto scale_factor = sqrt( norm_avg / norm_merged );
+      for( auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; i++ ){
+        speaker[i] *= scale_factor;
       }
     }
   }
