@@ -13,6 +13,7 @@
 #include "common/model_config.h"
 #include "common/processor_core.h"
 #include "common/resample.h"
+#include "common/spherical_average.h"
 
 namespace beatrice::common {
 
@@ -30,7 +31,8 @@ class ProcessorCore0 : public ProcessorCoreBase {
         pitch_context_(Beatrice20a2_CreatePitchContext1()),
         waveform_context_(Beatrice20a2_CreateWaveformContext1()),
         input_gain_context_(sample_rate),
-        output_gain_context_(sample_rate) {}
+        output_gain_context_(sample_rate),
+        sph_avg_() {}
   inline ~ProcessorCore0() override {
     Beatrice20a2_DestroyPhoneExtractor(phone_extractor_);
     Beatrice20a2_DestroyPitchEstimator(pitch_estimator_);
@@ -96,7 +98,10 @@ class ProcessorCore0 : public ProcessorCoreBase {
   Beatrice20a2_WaveformContext1* waveform_context_;
   Gain::Context input_gain_context_;
   Gain::Context output_gain_context_;
+
+  // モデルマージ
   std::vector<float> speaker_morphing_weights_;
+  SphericalAverage<float> sph_avg_;
 
   inline auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);
