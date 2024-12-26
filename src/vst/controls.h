@@ -257,35 +257,44 @@ class FileSelector : public CTextLabel {
   std::filesystem::path file_;
 };
 
-// 内部のメモリを開放するのは使う側の責任。
 // model description が空だったらラベルも非表示にする。
 // voice description が空だったらラベルも非表示にする。
 // voice description の位置は model description の大きさに依存する。
-// CView か何かを継承させるべきなのか……？
-class ModelVoiceDescription {
+class ModelVoiceDescription : public VSTGUI::CScrollView{
  public:
   ModelVoiceDescription() = default;
   ModelVoiceDescription(const CRect& area, CFontRef font,
                         const int element_height, const int element_mergin_y)
-      : area_(area),
+      : VSTGUI::CScrollView( area, 
+          CRect( 0,0, area.getWidth(), area.getHeight() ),
+          VSTGUI::CScrollView::kVerticalScrollbar | VSTGUI::CScrollView::kDontDrawFrame
+          | VSTGUI::CScrollView::kOverlayScrollbars),
         element_height_(element_height),
         element_mergin_y_(element_mergin_y),
         model_description_label_(),
         voice_description_label_(),
         model_description_(),
         voice_description_() {
-    auto y = area.top;
+
+    setBackgroundColor( kTransparentCColor );
+    auto scroll_bar = getVerticalScrollbar();
+    scroll_bar->setFrameColor(kDarkColorScheme.outline);
+    scroll_bar->setScrollerColor( kDarkColorScheme.secondary_dim );
+    scroll_bar->setBackgroundColor(kTransparentCColor);
+
+    auto y = 0;
     model_description_label_ =
-        new CTextLabel(CRect(area.left, y, area.right, y + element_height),
+        new CTextLabel(CRect(0, y, area.getWidth(), y + element_height),
                        "Model Description", nullptr, CParamDisplay::kNoFrame);
     model_description_label_->setFont(font);
     model_description_label_->setFontColor(kDarkColorScheme.on_surface);
     model_description_label_->setHoriAlign(CHoriTxtAlign::kLeftText);
     model_description_label_->setBackColor(kTransparentCColor);
+    addView( model_description_label_ );
     y += element_height + element_mergin_y;
 
     model_description_ =
-        new CMultiLineTextLabel(CRect(area.left, y, area.right, area.bottom));
+        new CMultiLineTextLabel(CRect(0, y, area.getWidth(), area.getHeight() - y));
     model_description_->setFont(font);
     model_description_->setFontColor(kDarkColorScheme.on_surface);
     model_description_->setHoriAlign(CHoriTxtAlign::kLeftText);
@@ -294,19 +303,21 @@ class ModelVoiceDescription {
     model_description_->setStyle(CParamDisplay::kNoFrame);
     model_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
     model_description_->setTextInset(CPoint(0, 2));
+    addView( model_description_ );
     y += model_description_->getHeight() + element_mergin_y;
 
     voice_description_label_ =
-        new CTextLabel(CRect(area.left, y, area.right, y + element_height),
+        new CTextLabel(CRect(0, y, area.getWidth(), y + element_height),
                        "Voice Description", nullptr, CParamDisplay::kNoFrame);
     voice_description_label_->setFont(font);
     voice_description_label_->setFontColor(kDarkColorScheme.on_surface);
     voice_description_label_->setHoriAlign(CHoriTxtAlign::kLeftText);
     voice_description_label_->setBackColor(kTransparentCColor);
+    addView( voice_description_label_ );
     y += element_height + element_mergin_y;
 
     voice_description_ =
-        new CMultiLineTextLabel(CRect(area.left, y, area.right, area.bottom));
+        new CMultiLineTextLabel(CRect(0 , y, area.getWidth(), area.getHeight() - y));
     voice_description_->setFont(font);
     voice_description_->setFontColor(kDarkColorScheme.on_surface);
     voice_description_->setHoriAlign(CHoriTxtAlign::kLeftText);
@@ -315,7 +326,7 @@ class ModelVoiceDescription {
     voice_description_->setStyle(CParamDisplay::kNoFrame);
     voice_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
     voice_description_->setTextInset(CPoint(0, 2));
-
+    addView( voice_description_ );
     AdjustVoiceDescriptionPosition();
   }
 
@@ -333,7 +344,7 @@ class ModelVoiceDescription {
     AdjustVoiceDescriptionPosition();
   }
 
-  void SetVoiceDescription(const std::u8string& description) const {
+  void SetVoiceDescription(const std::u8string& description) {
     if (description.empty()) {
       voice_description_->setText(nullptr);
       voice_description_->setVisible(false);
@@ -344,17 +355,17 @@ class ModelVoiceDescription {
       voice_description_->setVisible(true);
       voice_description_label_->setVisible(true);
     }
+    AdjustVoiceDescriptionPosition();
     Invalid();
   }
 
   void Invalid() const {
-    if (auto* const parent_view = model_description_->getParentView()) {
+    if (auto* const parent_view = getParentView()) {
       parent_view->invalid();
     }
   }
 
  private:
-  CRect area_;
   int element_height_;
   int element_mergin_y_;
   CTextLabel* model_description_label_;
@@ -363,16 +374,24 @@ class ModelVoiceDescription {
   CMultiLineTextLabel* voice_description_;
   friend class Editor;
 
-  void AdjustVoiceDescriptionPosition() const {
+  void AdjustVoiceDescriptionPosition() {
     auto y =
         model_description_->getText() == nullptr
-            ? area_.top
+            ? 0
             : model_description_->getViewSize().bottom + element_mergin_y_ + 4;
+    auto area_ = getViewSize();
+
     voice_description_label_->setViewSize(
-        CRect(area_.left, y, area_.right, y + element_height_));
+        CRect(0, y, area_.getWidth(), y + element_height_));
     y += element_height_ + element_mergin_y_;
     voice_description_->setViewSize(
-        CRect(area_.left, y, area_.right, area_.bottom));
+        CRect(0, y, area_.getWidth(), y + voice_description_->getHeight() ));
+    y += voice_description_->getHeight() + element_mergin_y_;
+    auto container_size = getContainerSize();
+    container_size.setHeight( y );
+    setContainerSize( container_size );
+
+    setDirty();
     Invalid();
   }
 };

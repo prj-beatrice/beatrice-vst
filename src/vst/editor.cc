@@ -167,6 +167,7 @@ void PLUGIN_API Editor::close() {
     tab_view_->removeAllTabs();
     frame->forget();
     frame = nullptr;
+    model_voice_description_ = nullptr;
     portraits_.clear();
     tab_view_ = nullptr;
     portrait_view_ = nullptr;
@@ -199,14 +200,15 @@ void Editor::SyncValue(const ParamID param_id,
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
       portrait_description_->setText(reinterpret_cast<const char*>(
           model_config_->voices[voice_id].portrait.description.c_str()));
-      model_voice_description_.SetVoiceDescription(
+      model_voice_description_->SetVoiceDescription(
           model_config_->voices[voice_id].description);
       tab_view_->selectTab( 0 );
     }else{
       portrait_view_->setBackground( nullptr );
       portrait_description_->setText("");
-      model_voice_description_.SetVoiceDescription(
-          u8"< Voice Morphing Mode >");
+      //model_voice_description_->SetVoiceDescription(
+      //    u8"< Voice Morphing Mode >");
+      SyncVoiceMorphingDescription();
       tab_view_->selectTab( 1 );
     }
   } else {
@@ -240,8 +242,8 @@ void Editor::SyncModelDescription() {
   const auto file = model_selector->GetPath();
   model_selector->setText("<unloaded>");
   voice_combobox->removeAllEntry();
-  model_voice_description_.SetModelDescription(u8"");
-  model_voice_description_.SetVoiceDescription(u8"");
+  model_voice_description_->SetModelDescription(u8"");
+  model_voice_description_->SetVoiceDescription(u8"");
   model_config_ = std::nullopt;
   portraits_.clear();
   if (file.empty()) {
@@ -254,7 +256,7 @@ void Editor::SyncModelDescription() {
     // 再び GUI を開いた場合などには
     // Processor のみ読み込まれている可能性がある。
     model_selector->setText("<failed to load>");
-    model_voice_description_.SetModelDescription(
+    model_voice_description_->SetModelDescription(
         u8"Error: The model could not be loaded due to a file move or another "
         u8"issue. Please reload a valid model.");
     return;
@@ -263,7 +265,7 @@ void Editor::SyncModelDescription() {
     const auto toml_data = toml::parse(file);
     model_config_ = toml::get<common::ModelConfig>(toml_data);
     if (model_config_->model.VersionInt() == -1) {
-      model_voice_description_.SetModelDescription(
+      model_voice_description_->SetModelDescription(
           u8"Error: Unknown model version.");
       return;
     }
@@ -366,15 +368,16 @@ void Editor::SyncModelDescription() {
       portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
       portrait_description_->setText(
           reinterpret_cast<const char*>(voice.portrait.description.c_str()));
-      model_voice_description_.SetVoiceDescription(voice.description);
+      model_voice_description_->SetVoiceDescription(voice.description);
       tab_view_->selectTab( 0 );
     }else{
       portrait_view_->setBackground(nullptr);
       portrait_description_->setText("");
-      model_voice_description_.SetVoiceDescription(u8"< Voice Morphing Mode >");
+      //model_voice_description_->SetVoiceDescription(u8"< Voice Morphing Mode >");
+      SyncVoiceMorphingDescription();
       tab_view_->selectTab( 1 );
     }
-    model_voice_description_.SetModelDescription(
+    model_voice_description_->SetModelDescription(
         model_config_->model.description);
     
     portrait_view_->setDirty();
@@ -382,12 +385,12 @@ void Editor::SyncModelDescription() {
     morphing_weights_view_->setDirty();
 
     if (auto* const column_view =
-            model_voice_description_.model_description_->getParentView()) {
+            model_voice_description_->getParentView()) {
       column_view->setDirty();
     }
   } catch (const std::exception& e) {
     model_selector->setText("<failed to load>");
-    model_voice_description_.SetModelDescription(
+    model_voice_description_->SetModelDescription(
         u8"Error:\n" +
         std::u8string(e.what(), e.what() + std::strlen(e.what())));
     return;
@@ -426,6 +429,11 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto error_code = num_param->ControllerSetValue(core, plain_value);
     assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
+
+    if( vst_param_id >= static_cast<int>(ParameterID::kVoiceMorphWeights) && 
+        vst_param_id < static_cast<int>(ParameterID::kVoiceMorphWeights) + common::kMaxNSpeakers ){
+        SyncVoiceMorphingDescription();
+    }
   } else if (auto* const control = dynamic_cast<COptionMenu*>(pControl)) {
     const auto* const list_param = std::get_if<common::ListParameter>(&param);
     assert(list_param);
@@ -445,7 +453,7 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto error_code = list_param->ControllerSetValue(core, plain_value);
     if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
       // これが表示されることは無いはず
-      model_voice_description_.SetVoiceDescription(
+      model_voice_description_->SetVoiceDescription(
           u8"Error: Speaker ID out of range.");
     }
     assert(error_code == common::ErrorCode::kSuccess);
@@ -780,19 +788,12 @@ auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
   context.y += std::max(context.last_element_mergin, 24);
   const auto offset_x = context.x;
 
-  model_voice_description_ = ModelVoiceDescription(
+  model_voice_description_ = new ModelVoiceDescription(
       CRect(context.x, context.y, context.column_width - offset_x,
-            kWindowHeight - kFooterHeight),
+            kWindowHeight - kFooterHeight - kHeaderHeight),
       VSTGUI::kNormalFont, kElementHeight, kElementMerginY + 4);
 
-  context.column_elements.push_back(
-      model_voice_description_.model_description_label_);
-  context.column_elements.push_back(
-      model_voice_description_.model_description_);
-  context.column_elements.push_back(
-      model_voice_description_.voice_description_label_);
-  context.column_elements.push_back(
-      model_voice_description_.voice_description_);
+  context.column_elements.push_back( model_voice_description_);
 
   return nullptr;
 }
@@ -889,7 +890,24 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   return morphing_weights_view_;
 }
 
-
+void Editor::SyncVoiceMorphingDescription(){
+  std::stringstream ss;
+  for( auto i = 0; i < common::kMaxNSpeakers; i++ ){
+    if( morphing_labels_[i]->isVisible() ){
+      auto control = controls_.at( static_cast<int>(ParameterID::kVoiceMorphWeights) + i );
+      if( control->getValue() > 0.0 ){
+        ss << std::string( reinterpret_cast<const char*>( model_config_->voices[i].name.c_str() ) );
+        ss << std::endl;
+        ss << std::string( reinterpret_cast<const char*>( model_config_->voices[i].description.c_str() ) );
+        ss << std::endl;
+      }
+    }else{
+      break;
+    }
+  }
+  std::u8string str( reinterpret_cast<const char8_t*>( ss.str().c_str() ) );
+  model_voice_description_->SetVoiceDescription( str );
+}
 
 
 }  // namespace beatrice::vst

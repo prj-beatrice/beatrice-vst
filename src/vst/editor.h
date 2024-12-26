@@ -83,12 +83,13 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   static void BeginTabColumn(Context&, int width, const CColor& back_color);
   auto EndTabColumn(Context&) -> CView*;
   auto MakeVoiceMorphingView(Context&) -> CView*;
-
+  void SyncVoiceMorphingDescription();
+  
   std::map<ParamID, CControl*> controls_;
   CFontRef font_, font_bold_;
   std::optional<common::ModelConfig> model_config_;
 
-  ModelVoiceDescription model_voice_description_;
+  ModelVoiceDescription* model_voice_description_;
 
   VSTGUI::CTabView* tab_view_;
 
