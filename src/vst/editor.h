@@ -92,7 +92,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
 
   VSTGUI::CTabView* tab_view_;
 
-  CView* portraig_view_;
+  CView* portrait_view_;
   CMultiLineTextLabel* portrait_description_;
 
   std::map<std::u8string, SharedPointer<CBitmap>> portraits_;

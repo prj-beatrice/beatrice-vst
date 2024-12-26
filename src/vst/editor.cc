@@ -55,7 +55,7 @@ Editor::Editor(void* const controller)
       font_(new CFontDesc(kNormalFont->getName(), 14)),
       font_bold_(new CFontDesc(kNormalFont->getName(), 14, kBoldFace)),
       tab_view_(),
-      portraig_view_(),
+      portrait_view_(),
       portrait_description_(),
       morphing_labels_(),
       morphing_weights_view_() {
@@ -169,7 +169,7 @@ void PLUGIN_API Editor::close() {
     frame = nullptr;
     portraits_.clear();
     tab_view_ = nullptr;
-    portraig_view_ = nullptr;
+    portrait_view_ = nullptr;
     portrait_description_ = nullptr;
     morphing_weights_view_ = nullptr;
   }
@@ -195,7 +195,7 @@ void Editor::SyncValue(const ParamID param_id,
     // setValueNormalized は正しく動かない
     control->setValue(static_cast<float>(voice_id));
     if( voice_id < static_cast<int>( control->getMax() ) ){
-      portraig_view_->setBackground(
+      portrait_view_->setBackground(
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
       portrait_description_->setText(reinterpret_cast<const char*>(
           model_config_->voices[voice_id].portrait.description.c_str()));
@@ -203,7 +203,7 @@ void Editor::SyncValue(const ParamID param_id,
           model_config_->voices[voice_id].description);
       tab_view_->selectTab( 0 );
     }else{
-      portraig_view_->setBackground( nullptr );
+      portrait_view_->setBackground( nullptr );
       portrait_description_->setText("");
       model_voice_description_.SetVoiceDescription(
           u8"< Voice Morphing Mode >");
@@ -363,13 +363,13 @@ void Editor::SyncModelDescription() {
                         static_cast<ParamID>(ParameterID::kVoice)));
     if( voice_id < voice_counter ){
       const auto& voice = model_config_->voices[voice_id];
-      portraig_view_->setBackground(portraits_.at(voice.portrait.path).get());
+      portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
       portrait_description_->setText(
           reinterpret_cast<const char*>(voice.portrait.description.c_str()));
       model_voice_description_.SetVoiceDescription(voice.description);
       tab_view_->selectTab( 0 );
     }else{
-      portraig_view_->setBackground(nullptr);
+      portrait_view_->setBackground(nullptr);
       portrait_description_->setText("");
       model_voice_description_.SetVoiceDescription(u8"< Voice Morphing Mode >");
       tab_view_->selectTab( 1 );
@@ -377,7 +377,7 @@ void Editor::SyncModelDescription() {
     model_voice_description_.SetModelDescription(
         model_config_->model.description);
     
-    portraig_view_->setDirty();
+    portrait_view_->setDirty();
     portrait_description_->setDirty();
     morphing_weights_view_->setDirty();
 
@@ -769,11 +769,11 @@ auto Editor::MakeFileSelector(Context& context,
 
 auto Editor::MakePortraitView(Context& context) -> CView* {
 
-  portraig_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
-  context.column_elements.push_back(portraig_view_);
+  portrait_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
+  context.column_elements.push_back(portrait_view_);
   context.y += kPortraitHeight;
   context.last_element_mergin = kElementMerginY;
-  return portraig_view_;
+  return portrait_view_;
 }
 
 auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {

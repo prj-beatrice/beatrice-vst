@@ -53,7 +53,7 @@ class SphericalAverage{
       normalize_vector( M, &p[ n * M ]);
     }
   }
-  void set_weights( size_t num_point, T* weights ){
+  void set_weights( size_t num_point, const T* weights ){
     assert( N == num_point );
     converged = false;
     std::copy_n( weights, N, w.begin() );
