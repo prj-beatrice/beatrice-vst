@@ -39,8 +39,8 @@ class ProcessorProxy {
   }
   [[nodiscard]] auto GetParameter(ParameterID param_id) const -> const auto&;
   template <typename T>
-  inline auto SetParameter(const ParameterID param_id,
-                           const T& value) -> ErrorCode {
+  inline auto SetParameter(const ParameterID param_id, const T& value)
+      -> ErrorCode {
     parameter_state_.SetValue(param_id, value);
     return SyncParameter(param_id);
   }

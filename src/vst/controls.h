@@ -17,9 +17,11 @@
 #include "vst3sdk/vstgui4/vstgui/lib/cgraphicstransform.h"
 #include "vst3sdk/vstgui4/vstgui/lib/clinestyle.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cparamdisplay.h"
+#include "vst3sdk/vstgui4/vstgui/lib/controls/cscrollbar.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cslider.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/ctextlabel.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cpoint.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cscrollview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cstring.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguibase.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
@@ -208,8 +210,8 @@ class FileSelector : public CTextLabel {
   explicit FileSelector(const CRect& size, const UTF8String& text = "")
       : CTextLabel(size, text) {}
 
-  auto onMouseDown(CPoint& where,
-                   const CButtonState& buttons) -> CMouseEventResult override {
+  auto onMouseDown(CPoint& where, const CButtonState& buttons)
+      -> CMouseEventResult override {
     if (buttons.isLeftButton()) {
       auto* const selector =
           CNewFileSelector::create(getFrame(), CNewFileSelector::kSelectFile);
@@ -223,8 +225,8 @@ class FileSelector : public CTextLabel {
     return CTextLabel::onMouseDown(where, buttons);
   }
 
-  auto notify(CBaseObject* sender,
-              const char* message) -> CMessageResult override {
+  auto notify(CBaseObject* sender, const char* message)
+      -> CMessageResult override {
     if (std::strcmp(message, CNewFileSelector::kSelectEndMessage) == 0) {
       // ファイルパスを取得
       auto* const selector = static_cast<CNewFileSelector*>(sender);
@@ -260,26 +262,21 @@ class FileSelector : public CTextLabel {
 // model description が空だったらラベルも非表示にする。
 // voice description が空だったらラベルも非表示にする。
 // voice description の位置は model description の大きさに依存する。
-class ModelVoiceDescription : public VSTGUI::CScrollView{
+class ModelVoiceDescription : public VSTGUI::CScrollView {
  public:
-  ModelVoiceDescription() = default;
   ModelVoiceDescription(const CRect& area, CFontRef font,
                         const int element_height, const int element_mergin_y)
-      : VSTGUI::CScrollView( area, 
-          CRect( 0,0, area.getWidth(), area.getHeight() ),
-          VSTGUI::CScrollView::kVerticalScrollbar | VSTGUI::CScrollView::kDontDrawFrame
-          | VSTGUI::CScrollView::kOverlayScrollbars),
+      : VSTGUI::CScrollView(area,
+                            CRect(0, 0, area.getWidth(), area.getHeight()),
+                            VSTGUI::CScrollView::kVerticalScrollbar |
+                                VSTGUI::CScrollView::kDontDrawFrame |
+                                VSTGUI::CScrollView::kOverlayScrollbars),
         element_height_(element_height),
-        element_mergin_y_(element_mergin_y),
-        model_description_label_(),
-        voice_description_label_(),
-        model_description_(),
-        voice_description_() {
-
-    setBackgroundColor( kTransparentCColor );
+        element_mergin_y_(element_mergin_y) {
+    setBackgroundColor(kTransparentCColor);
     auto scroll_bar = getVerticalScrollbar();
     scroll_bar->setFrameColor(kDarkColorScheme.outline);
-    scroll_bar->setScrollerColor( kDarkColorScheme.secondary_dim );
+    scroll_bar->setScrollerColor(kDarkColorScheme.secondary_dim);
     scroll_bar->setBackgroundColor(kTransparentCColor);
 
     auto y = 0;
@@ -290,11 +287,11 @@ class ModelVoiceDescription : public VSTGUI::CScrollView{
     model_description_label_->setFontColor(kDarkColorScheme.on_surface);
     model_description_label_->setHoriAlign(CHoriTxtAlign::kLeftText);
     model_description_label_->setBackColor(kTransparentCColor);
-    addView( model_description_label_ );
+    addView(model_description_label_);
     y += element_height + element_mergin_y;
 
-    model_description_ =
-        new CMultiLineTextLabel(CRect(0, y, area.getWidth(), area.getHeight() - y));
+    model_description_ = new CMultiLineTextLabel(
+        CRect(0, y, area.getWidth(), area.getHeight() - y));
     model_description_->setFont(font);
     model_description_->setFontColor(kDarkColorScheme.on_surface);
     model_description_->setHoriAlign(CHoriTxtAlign::kLeftText);
@@ -303,7 +300,7 @@ class ModelVoiceDescription : public VSTGUI::CScrollView{
     model_description_->setStyle(CParamDisplay::kNoFrame);
     model_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
     model_description_->setTextInset(CPoint(0, 2));
-    addView( model_description_ );
+    addView(model_description_);
     y += model_description_->getHeight() + element_mergin_y;
 
     voice_description_label_ =
@@ -313,11 +310,11 @@ class ModelVoiceDescription : public VSTGUI::CScrollView{
     voice_description_label_->setFontColor(kDarkColorScheme.on_surface);
     voice_description_label_->setHoriAlign(CHoriTxtAlign::kLeftText);
     voice_description_label_->setBackColor(kTransparentCColor);
-    addView( voice_description_label_ );
+    addView(voice_description_label_);
     y += element_height + element_mergin_y;
 
-    voice_description_ =
-        new CMultiLineTextLabel(CRect(0 , y, area.getWidth(), area.getHeight() - y));
+    voice_description_ = new CMultiLineTextLabel(
+        CRect(0, y, area.getWidth(), area.getHeight() - y));
     voice_description_->setFont(font);
     voice_description_->setFontColor(kDarkColorScheme.on_surface);
     voice_description_->setHoriAlign(CHoriTxtAlign::kLeftText);
@@ -326,7 +323,7 @@ class ModelVoiceDescription : public VSTGUI::CScrollView{
     voice_description_->setStyle(CParamDisplay::kNoFrame);
     voice_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
     voice_description_->setTextInset(CPoint(0, 2));
-    addView( voice_description_ );
+    addView(voice_description_);
     AdjustVoiceDescriptionPosition();
   }
 
@@ -368,10 +365,10 @@ class ModelVoiceDescription : public VSTGUI::CScrollView{
  private:
   int element_height_;
   int element_mergin_y_;
-  CTextLabel* model_description_label_;
-  CTextLabel* voice_description_label_;
-  CMultiLineTextLabel* model_description_;
-  CMultiLineTextLabel* voice_description_;
+  CTextLabel* model_description_label_ = nullptr;
+  CTextLabel* voice_description_label_ = nullptr;
+  CMultiLineTextLabel* model_description_ = nullptr;
+  CMultiLineTextLabel* voice_description_ = nullptr;
   friend class Editor;
 
   void AdjustVoiceDescriptionPosition() {
@@ -379,17 +376,17 @@ class ModelVoiceDescription : public VSTGUI::CScrollView{
         model_description_->getText() == nullptr
             ? 0
             : model_description_->getViewSize().bottom + element_mergin_y_ + 4;
-    auto area_ = getViewSize();
+    auto area = getViewSize();
 
     voice_description_label_->setViewSize(
-        CRect(0, y, area_.getWidth(), y + element_height_));
+        CRect(0, y, area.getWidth(), y + element_height_));
     y += element_height_ + element_mergin_y_;
     voice_description_->setViewSize(
-        CRect(0, y, area_.getWidth(), y + voice_description_->getHeight() ));
+        CRect(0, y, area.getWidth(), y + voice_description_->getHeight()));
     y += voice_description_->getHeight() + element_mergin_y_;
     auto container_size = getContainerSize();
-    container_size.setHeight( y );
-    setContainerSize( container_size );
+    container_size.setHeight(y);
+    setContainerSize(container_size);
 
     setDirty();
     Invalid();

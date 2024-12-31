@@ -21,8 +21,8 @@ class ProcessorCoreBase {
  public:
   virtual ~ProcessorCoreBase() = default;
   [[nodiscard]] virtual auto GetVersion() const -> int = 0;
-  virtual auto Process(const float* input, float* output,
-                       int n_samples) -> ErrorCode = 0;
+  virtual auto Process(const float* input, float* output, int n_samples)
+      -> ErrorCode = 0;
   virtual auto ResetContext() -> ErrorCode { return ErrorCode::kSuccess; }
   virtual auto LoadModel(const ModelConfig& /*config*/,
                          const std::filesystem::path& /*file*/) -> ErrorCode {
@@ -65,9 +65,11 @@ class ProcessorCoreBase {
     return ErrorCode::kSuccess;
   }
 
-  virtual auto SetSpeakerMorphingWeight(
-    int /*target_speaker*/, double /*morphing weight*/
-  ) -> ErrorCode { return ErrorCode::kSuccess; }
+  virtual auto SetSpeakerMorphingWeight(int /*target_speaker*/,
+                                        double /*morphing weight*/
+                                        ) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
 
   friend class ProcessorProxy;
 };

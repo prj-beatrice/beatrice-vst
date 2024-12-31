@@ -31,8 +31,7 @@ class ProcessorCore1 : public ProcessorCoreBase {
         pitch_context_(Beatrice20b1_CreatePitchContext1()),
         waveform_context_(Beatrice20b1_CreateWaveformContext1()),
         input_gain_context_(sample_rate),
-        output_gain_context_(sample_rate),
-        sph_avg_() {}
+        output_gain_context_(sample_rate) {}
   inline ~ProcessorCore1() override {
     Beatrice20b1_DestroyPhoneExtractor(phone_extractor_);
     Beatrice20b1_DestroyPitchEstimator(pitch_estimator_);
@@ -42,8 +41,8 @@ class ProcessorCore1 : public ProcessorCoreBase {
     Beatrice20b1_DestroyWaveformContext1(waveform_context_);
   }
   [[nodiscard]] auto GetVersion() const -> int override;
-  auto Process(const float* input, float* output,
-               int n_samples) -> ErrorCode override;
+  auto Process(const float* input, float* output, int n_samples)
+      -> ErrorCode override;
   auto ResetContext() -> ErrorCode override;
   auto LoadModel(const ModelConfig& /*config*/,
                  const std::filesystem::path& /*file*/) -> ErrorCode override;
@@ -59,9 +58,9 @@ class ProcessorCore1 : public ProcessorCoreBase {
   auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode override;
   auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode override;
-  auto SetSpeakerMorphingWeight(
-    int /*target_speaker*/, double /*morphing weight*/
-  ) -> ErrorCode override;
+  auto SetSpeakerMorphingWeight(int /*target_speaker*/,
+                                double /*morphing weight*/
+                                ) -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {

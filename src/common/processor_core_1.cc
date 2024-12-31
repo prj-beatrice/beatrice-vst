@@ -115,19 +115,21 @@ void ProcessorCore1::Process1(const float* const input, float* const output) {
       std::clamp(static_cast<int>(std::round(tmp_quantized_pitch)), 1,
                  BEATRICE_PITCH_BINS - 1);
   std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker;
-  if( target_speaker_ == n_speakers_){
-    if( ! sph_avg_.update() ){
-      sph_avg_.apply_weights( n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-                              speaker_embeddings_.data(),
-                              &speaker_embeddings_[ n_speakers_ 
-                              * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS] );
+  if (target_speaker_ == n_speakers_) {
+    if (!sph_avg_.Update()) {
+      sph_avg_.ApplyWeights(
+          n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+          speaker_embeddings_.data(),
+          &speaker_embeddings_[n_speakers_ *
+                               BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS]);
     }
   }
-  if( target_speaker_ <= n_speakers_ ){
-    std::memcpy(speaker.data(),
-                &speaker_embeddings_[target_speaker_ *
-                                    BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS],
-                sizeof(float) * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+  if (target_speaker_ <= n_speakers_) {
+    std::memcpy(
+        speaker.data(),
+        &speaker_embeddings_[target_speaker_ *
+                             BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS],
+        sizeof(float) * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
   }
 
   for (auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; ++i) {
@@ -181,17 +183,17 @@ auto ProcessorCore1::LoadModel(const ModelConfig& /*config*/,
           &n_speakers_)) {
     return static_cast<ErrorCode>(err);
   }
-  speaker_embeddings_.resize( ( n_speakers_ + 1 )*
-                             BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS, 0.0f);
-  speaker_morphing_weights_.resize( n_speakers_, 0.0f );
+  speaker_embeddings_.resize(
+      (n_speakers_ + 1) * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS, 0.0f);
+  speaker_morphing_weights_.resize(n_speakers_, 0.0f);
   if (const auto err = Beatrice20b1_ReadSpeakerEmbeddings(
           reinterpret_cast<const char*>(
               (d / "speaker_embeddings.bin").u8string().c_str()),
           speaker_embeddings_.data())) {
     return static_cast<ErrorCode>(err);
   }
-  sph_avg_.initialize( n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-                       speaker_embeddings_.data() );
+  sph_avg_.Initialize(n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+                      speaker_embeddings_.data());
 
   formant_shift_embeddings_.resize(9 *
                                    BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
@@ -247,18 +249,19 @@ auto ProcessorCore1::SetOutputGain(const double new_output_gain) -> ErrorCode {
   return ErrorCode::kSuccess;
 }
 
-auto ProcessorCore1::SetSpeakerMorphingWeight(
-  int target_speaker_id, double morphing_weight
-) -> ErrorCode {
-  if( target_speaker_id < 0 || target_speaker_id >= n_speakers_ ){
+auto ProcessorCore1::SetSpeakerMorphingWeight(int target_speaker_id,
+                                              double morphing_weight)
+    -> ErrorCode {
+  if (target_speaker_id < 0 || target_speaker_id >= n_speakers_) {
     return ErrorCode::kSpeakerIDOutOfRange;
   }
   speaker_morphing_weights_[target_speaker_id] = morphing_weight;
-  sph_avg_.set_weights( n_speakers_, speaker_morphing_weights_.data() );
-  sph_avg_.apply_weights( n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-                          speaker_embeddings_.data(),
-                          &speaker_embeddings_[ n_speakers_ 
-                          * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS] );
+  sph_avg_.SetWeights(n_speakers_, speaker_morphing_weights_.data());
+  sph_avg_.ApplyWeights(
+      n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+      speaker_embeddings_.data(),
+      &speaker_embeddings_[n_speakers_ *
+                           BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS]);
   return ErrorCode::kSuccess;
 }
 

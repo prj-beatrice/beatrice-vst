@@ -42,8 +42,8 @@ class Controller : public Steinberg::Vst::EditController {
 
   void editorDestroyed(EditorView* editorView) SMTG_OVERRIDE;
 
-  auto PLUGIN_API setParamNormalized(ParamID param_id,
-                                     ParamValue value) -> tresult SMTG_OVERRIDE;
+  auto PLUGIN_API setParamNormalized(ParamID param_id, ParamValue value)
+      -> tresult SMTG_OVERRIDE;
 
  private:
   common::ControllerCore core_;
