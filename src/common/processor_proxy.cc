@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Project Beatrice
+// Copyright (c) 2024-2025 Project Beatrice and Contributors
 
 #include "common/processor_proxy.h"
 
