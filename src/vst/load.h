@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Project Beatrice
+// Copyright (c) 2024-2025 Project Beatrice and Contributors
 
 #ifndef BEATRICE_VST_LOAD_H_
 #define BEATRICE_VST_LOAD_H_

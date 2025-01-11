@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Project Beatrice
+// Copyright (c) 2024-2025 Project Beatrice and Contributors
 
 #ifndef BEATRICE_VST_METADATA_H_
 #define BEATRICE_VST_METADATA_H_
@@ -21,7 +21,7 @@
 #define stringCompanyWeb       "prj-beatrice.com"
 #define stringCompanyEmail     "167534685+prj-beatrice@users.noreply.github.com"
 #define stringCompanyName      "Project Beatrice"
-#define stringLegalCopyright   "Copyright 2022-2024 Project Beatrice"
+#define stringLegalCopyright   "Copyright 2022-2025 Project Beatrice and Contributors"
 #define stringLegalTrademarks  "VST is a trademark of Steinberg Media Technologies GmbH"
 
 #define BACKGROUND_IMAGE       "@background_image@"
