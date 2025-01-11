@@ -1,0 +1,25 @@
+Beatrice Contributor License Agreement
+
+To contribute source code, documentation, or other data ("Code") that you have
+authored to Beatrice, you must agree to the terms below.
+
+1. License Grant
+You grant Project Beatrice a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable copyright license to reproduce, prepare derivative
+works of, publicly display, publicly perform, sublicense, and distribute your
+contributions and such derivative works.
+
+2. Notices and Knowledge
+By contributing Code, you confirm that, to the best of your knowledge, the Code
+does not violate the rights of any person or entity.
+If you contribute Code on behalf of your employer, you confirm that an
+appropriate representative of that employer has authorized the inclusion of such
+Code in a website or repository operated or controlled by Project Beatrice or
+its associated parties under the terms of this agreement.
+
+3. Code Created by Others
+You may submit Code not written by you, provided that:
+a) The original author and the license of that Code are clearly identified in an
+   appropriate location, and
+b) You make all reasonable and appropriate efforts to ensure that such Code
+   conforms to section 2 of this agreement.
