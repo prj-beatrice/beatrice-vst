@@ -49,6 +49,7 @@ const ParameterSchema kSchema = [] {
                                                   0.0);
              controller.updated_parameters_.push_back(
                  ParameterID::kFormantShift);
+
              // AverageTargetPitches
              for (auto i = 0; i < kMaxNSpeakers; ++i) {
                controller.parameter_state_.SetValue(
@@ -61,6 +62,44 @@ const ParameterSchema kSchema = [] {
                        static_cast<int>(ParameterID::kAverageTargetPitchBase) +
                        i));
              }
+
+             // Voice Morph の AverageTargetPitch を計算
+             // 今のところは各 Voice の値の単純平均を採用することとする
+             auto voice_counter = kMaxNSpeakers;
+             for (auto i = 0; i < kMaxNSpeakers; ++i) {
+               const auto& voice = model_config.voices[i];
+               if (voice.name.empty() && voice.description.empty() &&
+                   voice.portrait.path.empty() &&
+                   voice.portrait.description.empty()) {
+                 voice_counter = i;
+                 break;
+               }
+             }
+             double morphed_average_pitch = 0;
+             for (auto i = 0; i < voice_counter; ++i) {
+               morphed_average_pitch += model_config.voices[i].average_pitch;
+             }
+             morphed_average_pitch /= voice_counter;
+             controller.parameter_state_.SetValue(
+                 static_cast<ParameterID>(
+                     static_cast<int>(ParameterID::kAverageTargetPitchBase) +
+                     voice_counter),
+                 morphed_average_pitch);
+             controller.updated_parameters_.push_back(static_cast<ParameterID>(
+                 static_cast<int>(ParameterID::kAverageTargetPitchBase) +
+                 voice_counter));
+
+             // kVoiceMorphWeightss
+             for (auto i = 0; i < kMaxNSpeakers; ++i) {
+               controller.parameter_state_.SetValue(
+                   static_cast<ParameterID>(
+                       static_cast<int>(ParameterID::kVoiceMorphWeights) + i),
+                   0.0);
+               controller.updated_parameters_.push_back(
+                   static_cast<ParameterID>(
+                       static_cast<int>(ParameterID::kVoiceMorphWeights) + i));
+             }
+
              const auto average_target_pitch =
                  model_config.voices[0].average_pitch;
              switch (std::get<int>(
@@ -112,7 +151,7 @@ const ParameterSchema kSchema = [] {
            }(),
            0, u8"Voi"s, parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const int value) {
-             if (value < 0 || value >= kMaxNSpeakers) {
+             if (value < 0 || value > kMaxNSpeakers) {
                return ErrorCode::kSpeakerIDOutOfRange;
              }
              const auto formant_shift =
@@ -305,7 +344,9 @@ const ParameterSchema kSchema = [] {
            })},
   });
 
-  for (auto i = 0; i < kMaxNSpeakers; ++i) {
+  for (auto i = 0; i < kMaxNSpeakers + 1;
+       ++i) {  // Voice Morphing Mode の分も格納するため、要素数は (
+               // kMaxNSpeakers + 1 ) となる
     const auto i_ascii = std::to_string(i);
     const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
     schema.AddParameter(
@@ -316,6 +357,29 @@ const ParameterSchema kSchema = [] {
             parameter_flag::kIsReadOnly | parameter_flag::kIsHidden,
             [](ControllerCore&, double) { return ErrorCode::kSuccess; },
             [](ProcessorProxy&, double) { return ErrorCode::kSuccess; }));
+  }
+  for (auto i = 0; i < kMaxNSpeakers;
+       ++i) {  // こちらの要素数は kMaxNSpeakers で良い
+    const auto i_ascii = std::to_string(i);
+    const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
+    schema.AddParameter(
+        static_cast<ParameterID>(
+            static_cast<int>(ParameterID::kVoiceMorphWeights) + i),
+        NumberParameter(
+            u8"Voice "s + i_u8 + u8"'s Weight"s, 0.0, 0.0, 1.0, u8""s, 100,
+            u8"VcWght"s, parameter_flag::kCanAutomate,
+            [](ControllerCore& controller, double value) {
+              // マージの比率に応じて AverageTargetPitchBase も変える？
+              // そこまでする必要は無さそうに感じたので、とりあえず保留。
+              return ErrorCode::kSuccess;
+            },
+            // ここ、NumberParameter::processor_set_value_
+            // が関数ポインタのままだと
+            // キャプチャ付きのラムダ式を格納できなかった。
+            // std::function を用いる定義に書き直すと格納できるようになる。
+            [i](ProcessorProxy& vc, double value) {
+              return vc.GetCore()->SetSpeakerMorphingWeight(i, value);
+            }));
   }
 
   return schema;

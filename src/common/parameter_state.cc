@@ -111,8 +111,9 @@ auto ParameterState::Read(std::istream& is) -> ErrorCode {
   }
 }
 
-auto ParameterState::ReadOrSetDefault(
-    std::istream& is, const ParameterSchema& schema) -> ErrorCode {
+auto ParameterState::ReadOrSetDefault(std::istream& is,
+                                      const ParameterSchema& schema)
+    -> ErrorCode {
   states_.clear();
   SetDefaultValues(schema);
   return Read(is);

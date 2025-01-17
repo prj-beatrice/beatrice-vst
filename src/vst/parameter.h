@@ -29,8 +29,8 @@ inline auto Normalize(const common::NumberParameter& param,
   return normalized;
 }
 
-inline auto Normalize(const common::ListParameter& param,
-                      const int plain_value) -> double {
+inline auto Normalize(const common::ListParameter& param, const int plain_value)
+    -> double {
   return static_cast<double>(std::clamp(plain_value, 0, param.GetDivisions())) /
          static_cast<double>(param.GetDivisions());
 }

@@ -13,6 +13,7 @@
 #include "common/model_config.h"
 #include "common/processor_core.h"
 #include "common/resample.h"
+#include "common/spherical_average.h"
 
 namespace beatrice::common {
 
@@ -40,8 +41,8 @@ class ProcessorCore0 : public ProcessorCoreBase {
     Beatrice20a2_DestroyWaveformContext1(waveform_context_);
   }
   [[nodiscard]] auto GetVersion() const -> int override;
-  auto Process(const float* input, float* output,
-               int n_samples) -> ErrorCode override;
+  auto Process(const float* input, float* output, int n_samples)
+      -> ErrorCode override;
   auto ResetContext() -> ErrorCode override;
   auto LoadModel(const ModelConfig& /*config*/,
                  const std::filesystem::path& /*file*/) -> ErrorCode override;
@@ -57,6 +58,9 @@ class ProcessorCore0 : public ProcessorCoreBase {
   auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode override;
   auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode override;
+  auto SetSpeakerMorphingWeight(int /*target_speaker*/,
+                                double /*morphing weight*/
+                                ) -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {
@@ -72,6 +76,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
   int target_speaker_ = 0;
   double formant_shift_ = 0.0;
   double pitch_shift_ = 0.0;
+  int n_speakers_ = 0;
   double average_source_pitch_ = 52.0;
   double intonation_intensity_ = 1.0;
   double pitch_correction_ = 0.0;
@@ -92,6 +97,10 @@ class ProcessorCore0 : public ProcessorCoreBase {
   Beatrice20a2_WaveformContext1* waveform_context_;
   Gain::Context input_gain_context_;
   Gain::Context output_gain_context_;
+
+  // モデルマージ
+  std::vector<float> speaker_morphing_weights_;
+  SphericalAverage<float> sph_avg_;
 
   inline auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);
