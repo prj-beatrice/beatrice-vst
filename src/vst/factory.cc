@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Project Beatrice
+// Copyright (c) 2024-2025 Project Beatrice and Contributors
 
 #include "vst3sdk/public.sdk/source/main/pluginfactory.h"
 
