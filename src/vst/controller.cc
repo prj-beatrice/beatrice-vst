@@ -119,7 +119,6 @@ auto PLUGIN_API Controller::setComponentState(IBStream* const state)
 auto PLUGIN_API Controller::createView(const char* const name) -> IPlugView* {
   if (strcmp(name, "editor") == 0) {
     auto* const editor = new Editor(this);
-    editor->remember();
     editors_.push_back(editor);
     return editor;
   }
@@ -131,7 +130,6 @@ void Controller::editorDestroyed(EditorView* const editor) {
   if (itr == editors_.end()) {
     return;
   }
-  (*itr)->forget();
   *itr = editors_.back();
   editors_.pop_back();
 }
