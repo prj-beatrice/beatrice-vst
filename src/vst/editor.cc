@@ -195,7 +195,7 @@ void Editor::SyncValue(const ParamID param_id,
     // controller と editor で最大値が異なるため
     // setValueNormalized は正しく動かない
     control->setValue(static_cast<float>(voice_id));
-    if (voice_id < static_cast<int>(control->getMax())) {
+    if (voice_id == 0 || voice_id < static_cast<int>(control->getMax())) {
       portrait_view_->setBackground(
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
       portrait_description_->setText(reinterpret_cast<const char*>(
@@ -218,7 +218,7 @@ void Editor::SyncValue(const ParamID param_id,
     auto* const voice_control =
         controls_.at(static_cast<int>(ParameterID::kVoice));
     const auto voice_id = voice_control->getValue();
-    if (voice_id == static_cast<int>(voice_control->getMax())) {
+    if (voice_id > 0 && voice_id == static_cast<int>(voice_control->getMax())) {
       SyncVoiceMorphingDescription();
     }
     control->setValueNormalized(static_cast<float>(normalized_value));
@@ -343,8 +343,10 @@ void Editor::SyncModelDescription() {
     load_portrait_succeeded: {}
     }
 
-    voice_combobox->addEntry("Voice Morphing Mode");
-    portraits_.insert({u8"", nullptr});
+    if (voice_counter > 1) {
+      voice_combobox->addEntry("Voice Morphing Mode");
+      portraits_.insert({u8"", nullptr});
+    }
 
     voice_combobox->setDirty();
     for (auto i = 0; i < common::kMaxNSpeakers; i++) {
@@ -896,6 +898,20 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
 
 void Editor::SyncVoiceMorphingDescription() {
   std::u8string str;
+
+  str += u8"[注意 / Caution]";
+  str += u8"\n";
+  str +=
+      u8"Voice Morphing Mode では、未選択の Voice の学習データが\n"
+      u8"変換結果に影響を与えやすくなる可能性があります。\n"
+      u8"意図せぬ声質の類似や権利侵害にご注意ください。\n";
+  str +=
+      u8"In Voice Morphing Mode, the training data of unselected Voices could "
+      u8"be more prone to influencing the conversion results. Please be "
+      u8"mindful of unintended similarities in timbre and possible rights "
+      u8"infringement.\n";
+  str += u8"\n";
+
   for (auto i = 0; i < common::kMaxNSpeakers; i++) {
     if (morphing_labels_[i]->isVisible()) {
       auto control =
