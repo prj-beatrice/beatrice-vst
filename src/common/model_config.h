@@ -51,23 +51,19 @@ template <>
 struct from<ModelConfig::Model> {
   // NOLINTNEXTLINE(readability-identifier-naming)
   static auto from_toml(const value& v) -> ModelConfig::Model {
-    const auto name = find<std::string>(v, "name");
-    const auto description = find<std::string>(v, "description");
     return ModelConfig::Model{
         .version = find<std::string>(v, "version"),
-        .name = std::u8string(name.begin(), name.end()),
-        .description = std::u8string(description.begin(), description.end())};
+        .name = find<std::u8string>(v, "name"),
+        .description = find<std::u8string>(v, "description")};
   }
 };
 template <>
 struct from<ModelConfig::Voice::Portrait> {
   // NOLINTNEXTLINE(readability-identifier-naming)
   static auto from_toml(const value& v) -> ModelConfig::Voice::Portrait {
-    const auto path = find<std::string>(v, "path");
-    const auto description = find<std::string>(v, "description");
     return ModelConfig::Voice::Portrait{
-        .path = std::u8string(path.begin(), path.end()),
-        .description = std::u8string(description.begin(), description.end())};
+        .path = find<std::u8string>(v, "path"),
+        .description = find<std::u8string>(v, "description")};
   }
 };
 
@@ -75,11 +71,9 @@ template <>
 struct from<ModelConfig::Voice> {
   // NOLINTNEXTLINE(readability-identifier-naming)
   static auto from_toml(const value& v) -> ModelConfig::Voice {
-    const auto name = find<std::string>(v, "name");
-    const auto description = find<std::string>(v, "description");
     return ModelConfig::Voice{
-        .name = std::u8string(name.begin(), name.end()),
-        .description = std::u8string(description.begin(), description.end()),
+        .name = find<std::u8string>(v, "name"),
+        .description = find<std::u8string>(v, "description"),
         .average_pitch = find<double>(v, "average_pitch"),
         .portrait = get<ModelConfig::Voice::Portrait>(find(v, "portrait"))};
   }
