@@ -33,7 +33,7 @@ LinearParameter::LinearParameter(const TChar* title, ParamID tag,
 
   info.stepCount = divisions;
   info.defaultNormalizedValue = valueNormalized =
-      toNormalized(defaultValuePlain);
+      LinearParameter::toNormalized(defaultValuePlain);
   info.flags = flags;
   info.id = tag;
   info.unitId = unitID;

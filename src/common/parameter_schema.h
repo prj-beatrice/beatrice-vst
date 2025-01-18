@@ -3,6 +3,7 @@
 #ifndef BEATRICE_COMMON_PARAMETER_SCHEMA_H_
 #define BEATRICE_COMMON_PARAMETER_SCHEMA_H_
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <string>
@@ -21,7 +22,7 @@ class ControllerCore;
 
 // VST と互換性のあるフラグ
 namespace parameter_flag {
-enum : int {
+enum : std::uint8_t {
   kNoFlags = 0,
   // オートメーション可能
   kCanAutomate = 1 << 0,
@@ -39,7 +40,7 @@ enum : int {
 };
 }  // namespace parameter_flag
 
-enum class ParameterID : int {
+enum class ParameterID : std::int16_t {
   kNull = -1,
   // kByPass = 0,
   kModel = 1,
@@ -64,14 +65,14 @@ enum class ParameterID : int {
 
 class NumberParameter {
  public:
-  inline NumberParameter(std::u8string name, const double default_value,
-                         const double min_value, const double max_value,
-                         std::u8string units, const int divisions,
-                         std::u8string short_name, const int flags,
-                         const std::function<ErrorCode(ControllerCore&, double)>
-                             controller_set_value,
-                         const std::function<ErrorCode(ProcessorProxy&, double)>
-                             processor_set_value)
+  NumberParameter(std::u8string name, const double default_value,
+                  const double min_value, const double max_value,
+                  std::u8string units, const int divisions,
+                  std::u8string short_name, const int flags,
+                  const std::function<ErrorCode(ControllerCore&, double)>&
+                      controller_set_value,
+                  const std::function<ErrorCode(ProcessorProxy&, double)>&
+                      processor_set_value)
       : name_(std::move(name)),
         default_value_(default_value),
         min_value_(min_value),
@@ -82,29 +83,25 @@ class NumberParameter {
         flags_(flags),
         controller_set_value_(controller_set_value),
         processor_set_value_(processor_set_value) {}
-  [[nodiscard]] inline auto GetName() const -> const std::u8string& {
-    return name_;
-  }
-  [[nodiscard]] inline auto GetDefaultValue() const -> double {
+  [[nodiscard]] auto GetName() const -> const std::u8string& { return name_; }
+  [[nodiscard]] auto GetDefaultValue() const -> double {
     return default_value_;
   }
-  [[nodiscard]] inline auto GetMinValue() const -> double { return min_value_; }
-  [[nodiscard]] inline auto GetMaxValue() const -> double { return max_value_; }
-  [[nodiscard]] inline auto GetUnits() const -> const std::u8string& {
-    return units_;
-  }
-  [[nodiscard]] inline auto GetDivisions() const -> int { return divisions_; }
-  [[nodiscard]] inline auto GetShortName() const -> const std::u8string& {
+  [[nodiscard]] auto GetMinValue() const -> double { return min_value_; }
+  [[nodiscard]] auto GetMaxValue() const -> double { return max_value_; }
+  [[nodiscard]] auto GetUnits() const -> const std::u8string& { return units_; }
+  [[nodiscard]] auto GetDivisions() const -> int { return divisions_; }
+  [[nodiscard]] auto GetShortName() const -> const std::u8string& {
     return short_name_;
   }
-  [[nodiscard]] inline auto GetFlags() const -> int { return flags_; }
+  [[nodiscard]] auto GetFlags() const -> int { return flags_; }
   // 他のパラメータとの同期を取ったりするのに使う
-  inline auto ControllerSetValue(ControllerCore& ctx, const double value) const
+  auto ControllerSetValue(ControllerCore& ctx, const double value) const
       -> ErrorCode {
     return controller_set_value_(ctx, value);
   }
   // 音声処理クラスに値を設定するのに使う
-  inline auto ProcessorSetValue(ProcessorProxy& ctx, const double value) const
+  auto ProcessorSetValue(ProcessorProxy& ctx, const double value) const
       -> ErrorCode {
     return processor_set_value_(ctx, value);
   }
@@ -126,11 +123,12 @@ class NumberParameter {
 
 class ListParameter {
  public:
-  inline ListParameter(
+  ListParameter(
       std::u8string name, const std::vector<std::u8string>& values,
       const int default_value, std::u8string short_name, int flags,
-      const std::function<ErrorCode(ControllerCore&, int)> controller_set_value,
-      const std::function<ErrorCode(ProcessorProxy&, int)> processor_set_value)
+      const std::function<ErrorCode(ControllerCore&, int)>&
+          controller_set_value,
+      const std::function<ErrorCode(ProcessorProxy&, int)>& processor_set_value)
       : name_(std::move(name)),
         values_(values),
         default_value_(default_value),
@@ -138,28 +136,23 @@ class ListParameter {
         flags_(flags),
         controller_set_value_(controller_set_value),
         processor_set_value_(processor_set_value) {}
-  [[nodiscard]] inline auto GetName() const -> const std::u8string& {
-    return name_;
-  }
-  [[nodiscard]] inline auto GetValues() const
-      -> const std::vector<std::u8string>& {
+  [[nodiscard]] auto GetName() const -> const std::u8string& { return name_; }
+  [[nodiscard]] auto GetValues() const -> const std::vector<std::u8string>& {
     return values_;
   }
-  [[nodiscard]] inline auto GetDefaultValue() const -> int {
-    return default_value_;
-  }
-  [[nodiscard]] inline auto GetDivisions() const -> int {
+  [[nodiscard]] auto GetDefaultValue() const -> int { return default_value_; }
+  [[nodiscard]] auto GetDivisions() const -> int {
     return static_cast<int>(values_.size()) - 1;
   }
-  [[nodiscard]] inline auto GetShortName() const -> const std::u8string& {
+  [[nodiscard]] auto GetShortName() const -> const std::u8string& {
     return short_name_;
   }
-  [[nodiscard]] inline auto GetFlags() const -> int { return flags_; }
-  inline auto ControllerSetValue(ControllerCore& ctx, const int value) const
+  [[nodiscard]] auto GetFlags() const -> int { return flags_; }
+  auto ControllerSetValue(ControllerCore& ctx, const int value) const
       -> ErrorCode {
     return controller_set_value_(ctx, value);
   }
-  inline auto ProcessorSetValue(ProcessorProxy& ctx, const int value) const
+  auto ProcessorSetValue(ProcessorProxy& ctx, const int value) const
       -> ErrorCode {
     return processor_set_value_(ctx, value);
   }
@@ -176,34 +169,31 @@ class ListParameter {
 
 class StringParameter {
  public:
-  inline StringParameter(
+  StringParameter(
       std::u8string name, std::u8string default_value,
       const bool reset_when_model_load,
-      const std::function<ErrorCode(ControllerCore&, const std::u8string&)>
+      const std::function<ErrorCode(ControllerCore&, const std::u8string&)>&
           controller_set_value,
-      const std::function<ErrorCode(ProcessorProxy&, const std::u8string&)>
+      const std::function<ErrorCode(ProcessorProxy&, const std::u8string&)>&
           processor_set_value)
       : name_(std::move(name)),
         default_value_(std::move(default_value)),
         reset_when_model_load_(reset_when_model_load),
         controller_set_value_(controller_set_value),
         processor_set_value_(processor_set_value) {}
-  [[nodiscard]] inline auto GetName() const -> const std::u8string& {
-    return name_;
-  }
-  [[nodiscard]] inline auto GetDefaultValue() const -> const std::u8string& {
+  [[nodiscard]] auto GetName() const -> const std::u8string& { return name_; }
+  [[nodiscard]] auto GetDefaultValue() const -> const std::u8string& {
     return default_value_;
   }
-  [[nodiscard]] inline auto GetResetWhenModelLoad() const -> bool {
+  [[nodiscard]] auto GetResetWhenModelLoad() const -> bool {
     return reset_when_model_load_;
   }
-  inline auto ControllerSetValue(ControllerCore& ctx,
-                                 const std::u8string& value) const
+  auto ControllerSetValue(ControllerCore& ctx, const std::u8string& value) const
       -> ErrorCode {
     return controller_set_value_(ctx, value);
   }
-  inline auto ProcessorSetValue(ProcessorProxy& ctx,
-                                const std::u8string& value) const -> ErrorCode {
+  auto ProcessorSetValue(ProcessorProxy& ctx, const std::u8string& value) const
+      -> ErrorCode {
     return processor_set_value_(ctx, value);
   }
 
@@ -223,27 +213,27 @@ using ParameterVariant =
 // 直接コントロールできるパラメータは少なくともすべて含む
 class ParameterSchema {
  public:
-  inline ParameterSchema() = default;
-  inline explicit ParameterSchema(
+  ParameterSchema() = default;
+  explicit ParameterSchema(
       const std::vector<std::tuple<ParameterID, ParameterVariant>>&
           parameters) {
     for (const auto& [param_id, param] : parameters) {
       AddParameter(param_id, param);
     }
   }
-  inline void AddParameter(const ParameterID param_id,
-                           const ParameterVariant& parameter) {
+  void AddParameter(const ParameterID param_id,
+                    const ParameterVariant& parameter) {
     parameters_.insert({param_id, parameter});
   }
-  [[nodiscard]] inline auto GetParameter(const ParameterID param_id) const
+  [[nodiscard]] auto GetParameter(const ParameterID param_id) const
       -> const ParameterVariant& {
     return parameters_.at(param_id);
   }
   // NOLINTBEGIN(readability-identifier-naming)
-  [[nodiscard]] inline auto begin() const { return parameters_.begin(); }
-  [[nodiscard]] inline auto end() const { return parameters_.end(); }
-  [[nodiscard]] inline auto cbegin() const { return parameters_.cbegin(); }
-  [[nodiscard]] inline auto cend() const { return parameters_.cend(); }
+  [[nodiscard]] auto begin() const { return parameters_.begin(); }
+  [[nodiscard]] auto end() const { return parameters_.end(); }
+  [[nodiscard]] auto cbegin() const { return parameters_.cbegin(); }
+  [[nodiscard]] auto cend() const { return parameters_.cend(); }
   // NOLINTEND(readability-identifier-naming)
 
  private:

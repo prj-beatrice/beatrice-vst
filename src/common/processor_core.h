@@ -78,9 +78,9 @@ class ProcessorCoreBase {
 class ProcessorCoreUnloaded : public ProcessorCoreBase {
  public:
   using ProcessorCoreBase::ProcessorCoreBase;
-  [[nodiscard]] inline auto GetVersion() const -> int override { return -1; }
-  inline auto Process(const float* const /*input*/, float* const output,
-                      const int n_samples) -> ErrorCode override {
+  [[nodiscard]] auto GetVersion() const -> int override { return -1; }
+  auto Process(const float* const /*input*/, float* const output,
+               const int n_samples) -> ErrorCode override {
     std::memset(output, 0, sizeof(float) * n_samples);
     return ErrorCode::kSuccess;
   }

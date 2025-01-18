@@ -209,7 +209,7 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
     data.outputs[0].silenceFlags = 1U;
   } else {
     // VC
-    const auto error_code =
+    [[maybe_unused]] const auto error_code =
         vc_core_.GetCore()->Process(out0, out0, data.numSamples);
     // TODO(bug): error_code に基づいてサイレンスフラグを立てる
   }

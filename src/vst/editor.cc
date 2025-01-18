@@ -15,7 +15,6 @@
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/coptionmenu.h"
-#include "vst3sdk/vstgui4/vstgui/lib/crowcolumnview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cviewcontainer.h"
 #include "vst3sdk/vstgui4/vstgui/lib/platform/platformfactory.h"
