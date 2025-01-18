@@ -20,7 +20,7 @@ namespace beatrice::common {
 // 2.0.0-alpha.2 用の信号処理クラス
 class ProcessorCore0 : public ProcessorCoreBase {
  public:
-  inline explicit ProcessorCore0(const double sample_rate)
+  explicit ProcessorCore0(const double sample_rate)
       : ProcessorCoreBase(),
         any_freq_in_out_(sample_rate),
         phone_extractor_(Beatrice20a2_CreatePhoneExtractor()),
@@ -32,7 +32,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
         waveform_context_(Beatrice20a2_CreateWaveformContext1()),
         input_gain_context_(sample_rate),
         output_gain_context_(sample_rate) {}
-  inline ~ProcessorCore0() override {
+  ~ProcessorCore0() override {
     Beatrice20a2_DestroyPhoneExtractor(phone_extractor_);
     Beatrice20a2_DestroyPitchEstimator(pitch_estimator_);
     Beatrice20a2_DestroyWaveformGenerator(waveform_generator_);
@@ -53,14 +53,17 @@ class ProcessorCore0 : public ProcessorCoreBase {
   auto SetInputGain(double /*input_gain*/) -> ErrorCode override;
   auto SetOutputGain(double /*output_gain*/) -> ErrorCode override;
   auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode override;
+  // NOLINTNEXTLINE(readability/casting)
   auto SetIntonationIntensity(double /*intonation_intensity*/)
       -> ErrorCode override;
   auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode override;
+  // NOLINTNEXTLINE(readability/casting)
   auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode override;
   auto SetSpeakerMorphingWeight(int /*target_speaker*/,
                                 double /*morphing weight*/
-                                ) -> ErrorCode override;
+                                )      // NOLINT(whitespace/parens)
+      -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {
@@ -102,7 +105,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
   std::vector<float> speaker_morphing_weights_;
   SphericalAverage<float> sph_avg_;
 
-  inline auto IsLoaded() -> bool { return !model_file_.empty(); }
+  auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);
 };
 

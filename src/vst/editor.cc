@@ -15,7 +15,6 @@
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/coptionmenu.h"
-#include "vst3sdk/vstgui4/vstgui/lib/crowcolumnview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cviewcontainer.h"
 #include "vst3sdk/vstgui4/vstgui/lib/platform/platformfactory.h"
@@ -290,7 +289,7 @@ void Editor::SyncModelDescription() {
           voice.portrait.path.empty() && voice.portrait.description.empty()) {
         break;
       }
-      voice_counter++;
+      ++voice_counter;
       voice_combobox->addEntry(
           reinterpret_cast<const char*>(voice.name.c_str()));
 
@@ -349,7 +348,7 @@ void Editor::SyncModelDescription() {
     }
 
     voice_combobox->setDirty();
-    for (auto i = 0; i < common::kMaxNSpeakers; i++) {
+    for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
       auto* const slider =
           static_cast<Slider*>(controls_.at(static_cast<ParamID>(
               static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
@@ -854,7 +853,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   const auto label_width = morphing_weights_view_->getWidth() - kElementWidth -
                            kElementMerginX -
                            morphing_weights_view_->getScrollbarWidth();
-  for (auto i = 0; i < common::kMaxNSpeakers; i++) {
+  for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
     const auto label_pos = CRect(0, 0, label_width, kElementHeight)
                                .offset(kElementWidth + kElementMerginX,
                                        i * (kElementHeight + kElementMerginY));
@@ -869,7 +868,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
     morphing_weights_view_->addView(label_control);
     morphing_labels_[i] = label_control;
   }
-  for (auto i = 0; i < common::kMaxNSpeakers; i++) {
+  for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
     auto const vst_param_id =
         static_cast<int>(ParameterID::kVoiceMorphWeights) + i;
     auto const param_id = static_cast<ParamID>(vst_param_id);
@@ -912,7 +911,7 @@ void Editor::SyncVoiceMorphingDescription() {
       u8"infringement.\n";
   str += u8"\n";
 
-  for (auto i = 0; i < common::kMaxNSpeakers; i++) {
+  for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
     if (morphing_labels_[i]->isVisible()) {
       auto control =
           controls_.at(static_cast<int>(ParameterID::kVoiceMorphWeights) + i);

@@ -3,10 +3,12 @@
 #ifndef BEATRICE_COMMON_ERROR_H_
 #define BEATRICE_COMMON_ERROR_H_
 
+#include <cstdint>
+
 #include "beatricelib/beatrice.h"
 
 namespace beatrice::common {
-enum class [[nodiscard]] ErrorCode : int {
+enum class [[nodiscard]] ErrorCode : std::uint8_t {
   kSuccess = 0,
   kFileOpenError = Beatrice_kFileOpenError,
   kFileTooSmall = Beatrice_kFileTooSmall,

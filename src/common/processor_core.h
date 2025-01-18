@@ -53,6 +53,7 @@ class ProcessorCoreBase {
   virtual auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  // NOLINTNEXTLINE(readability/casting)
   virtual auto SetIntonationIntensity(double /*intonation_intensity*/)
       -> ErrorCode {
     return ErrorCode::kSuccess;
@@ -60,6 +61,7 @@ class ProcessorCoreBase {
   virtual auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  // NOLINTNEXTLINE(readability/casting)
   virtual auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode {
     return ErrorCode::kSuccess;
@@ -67,7 +69,8 @@ class ProcessorCoreBase {
 
   virtual auto SetSpeakerMorphingWeight(int /*target_speaker*/,
                                         double /*morphing weight*/
-                                        ) -> ErrorCode {
+                                        )      // NOLINT(whitespace/parens)
+      -> ErrorCode {
     return ErrorCode::kSuccess;
   }
 
@@ -78,9 +81,9 @@ class ProcessorCoreBase {
 class ProcessorCoreUnloaded : public ProcessorCoreBase {
  public:
   using ProcessorCoreBase::ProcessorCoreBase;
-  [[nodiscard]] inline auto GetVersion() const -> int override { return -1; }
-  inline auto Process(const float* const /*input*/, float* const output,
-                      const int n_samples) -> ErrorCode override {
+  [[nodiscard]] auto GetVersion() const -> int override { return -1; }
+  auto Process(const float* const /*input*/, float* const output,
+               const int n_samples) -> ErrorCode override {
     std::memset(output, 0, sizeof(float) * n_samples);
     return ErrorCode::kSuccess;
   }

@@ -131,7 +131,6 @@ void ProcessorCore1::Process1(const float* const input, float* const output) {
                              BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS],
         sizeof(float) * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
   }
-
   for (auto i = 0; i < BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS; ++i) {
     speaker[i] += formant_shift_embeddings_
         [static_cast<int>(std::round(formant_shift_ * 2 + 4)) *

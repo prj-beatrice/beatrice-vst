@@ -26,10 +26,11 @@ static inline auto ComputeSimpleFraction(const double ratio) {
   struct Fraction {
     int numer, denom;
   };
-  auto l = Fraction{0, 1};
-  auto r = Fraction{1, 0};
+  auto l = Fraction{.numer = 0, .denom = 1};
+  auto r = Fraction{.numer = 1, .denom = 0};
   while (true) {
-    const auto m = Fraction{l.numer + r.numer, l.denom + r.denom};
+    const auto m =
+        Fraction{.numer = l.numer + r.numer, .denom = l.denom + r.denom};
     if (ratio * m.denom < m.numer) {  // ratio < c
       if (m.numer >= 1000 || m.denom >= 1000) {
         return l;
@@ -294,8 +295,8 @@ class ConvertStreamFunctionFrequency {
 
   // input == output であってもよい
   template <class... Context>
-  inline auto operator()(const float* const input, float* const output,
-                         const int m, Context&&... context) {
+  auto operator()(const float* const input, float* const output, const int m,
+                  Context&&... context) {
     auto tmp_vector = std::vector<float>(input, input + m);
     auto converted_input = std::vector<float>();
     down_up_sampler_.ResampleIn(tmp_vector, converted_input);
@@ -310,11 +311,11 @@ class ConvertStreamFunctionFrequency {
     std::memcpy(output, std::to_address(tmp_vector.begin()), m * sizeof(float));
   }
 
-  [[nodiscard]] inline auto IsReady() const -> bool {
+  [[nodiscard]] auto IsReady() const -> bool {
     return down_up_sampler_.IsReady();
   }
 
-  [[nodiscard]] inline auto GetTargetFrequency() const -> double {
+  [[nodiscard]] auto GetTargetFrequency() const -> double {
     return target_frequency_;
   }
 };
@@ -333,8 +334,8 @@ class ConvertStreamFunctionBlockSize {
 
   // input != output でなければならない
   template <class... Context>
-  inline auto operator()(const float* const input, float* const output,
-                         const int n_io, Context&&... context) {
+  auto operator()(const float* const input, float* const output, const int n_io,
+                  Context&&... context) {
     assert(input != output);
     for (auto idx_io = 0; idx_io < n_io;) {
       const auto n_samples_process = std::min(n - idx_buffer_, n_io - idx_io);
@@ -370,8 +371,8 @@ class ConvertStreamFunctionFrom2In3OutTo6InOut {
 
   // input == output であってもよい
   template <class... Context>
-  inline auto operator()(const float* const input, float* const output,
-                         Context&&... context) {
+  auto operator()(const float* const input, float* const output,
+                  Context&&... context) {
     alignas(64) auto function_in = std::array<float, 2 * n>();
     alignas(64) auto function_out = std::array<float, 3 * n>();
     for (auto i = 0; i < 2 * n; ++i) {
@@ -410,8 +411,8 @@ class AnyFreqInOut {
             0.99 * 24000.0 / std::clamp(sample_rate, 24000.0, 48000.0))) {}
 
   template <class... Context>
-  inline auto operator()(const float* const input, float* const output,
-                         const int m, Context&&... context) {
+  auto operator()(const float* const input, float* const output, const int m,
+                  Context&&... context) {
     process_(input, output, m, std::forward<Context>(context)...);
   }
 

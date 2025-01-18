@@ -2,6 +2,7 @@
 
 #include "vst/controller.h"
 
+#include <algorithm>
 #include <sstream>
 #include <string>
 
@@ -126,7 +127,7 @@ auto PLUGIN_API Controller::createView(const char* const name) -> IPlugView* {
 }
 
 void Controller::editorDestroyed(EditorView* const editor) {
-  const auto itr = std::find(editors_.begin(), editors_.end(), editor);
+  const auto itr = std::ranges::find(editors_, editor);
   if (itr == editors_.end()) {
     return;
   }

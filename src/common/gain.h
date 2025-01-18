@@ -20,18 +20,14 @@ class Gain {
  public:
   class Context {
    public:
-    inline explicit Context(const double sample_rate,
-                            const double target_gain_db = 0.0)
+    explicit Context(const double sample_rate,
+                     const double target_gain_db = 0.0)
         : sample_rate_(sample_rate),
           target_gain_db_(target_gain_db),
           current_gain_db_(target_gain_db) {}
-    inline void SetTargetGain(const double gain_db) {
-      target_gain_db_ = gain_db;
-    }
-    inline void SetSampleRate(const double sr) { sample_rate_ = sr; }
-    [[nodiscard]] inline auto IsReady() const -> bool {
-      return sample_rate_ > 1e-5;
-    }
+    void SetTargetGain(const double gain_db) { target_gain_db_ = gain_db; }
+    void SetSampleRate(const double sr) { sample_rate_ = sr; }
+    [[nodiscard]] auto IsReady() const -> bool { return sample_rate_ > 1e-5; }
 
    private:
     // 設定
@@ -42,8 +38,8 @@ class Gain {
     friend Gain;
   };
 
-  inline void Process(const float* const input, float* const output,
-                      int n_samples, Gain::Context& context) const {
+  void Process(const float* const input, float* const output, int n_samples,
+               Gain::Context& context) const {
     const auto target_amplitude = DbToAmp(context.target_gain_db_);
     auto current_amplitude = DbToAmp(context.current_gain_db_);
 

@@ -27,13 +27,15 @@ class ParameterState {
 
   void SetDefaultValues(const ParameterSchema& schema);
   template <typename T>
-  inline void SetValue(const ParameterID param_id, const T value) requires(
-      sizeof(T) <= 8) {  // NOLINT(whitespace/braces)
+  void SetValue(const ParameterID param_id, const T value)
+    requires(sizeof(T) <= 8)
+  {  // NOLINT(whitespace/braces)
     states_.insert_or_assign(param_id, value);
   }
   template <typename T>
-  inline void SetValue(const ParameterID param_id, const T& value) requires(
-      sizeof(T) > 8) {  // NOLINT(whitespace/braces)
+  void SetValue(const ParameterID param_id, const T& value)
+    requires(sizeof(T) > 8)
+  {  // NOLINT(whitespace/braces)
     states_.insert_or_assign(param_id, std::make_unique<T>(value));
   }
   [[nodiscard]] auto GetValue(ParameterID param_id) const
