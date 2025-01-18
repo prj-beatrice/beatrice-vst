@@ -1,5 +1,7 @@
-#ifndef SPHERICAL_AVERAGE_H_
-#define SPHERICAL_AVERAGE_H_
+// Copyright (c) 2024-2025 Project Beatrice and Contributors
+
+#ifndef BEATRICE_COMMON_SPHERICAL_AVERAGE_H_
+#define BEATRICE_COMMON_SPHERICAL_AVERAGE_H_
 
 #define _USE_MATH_DEFINES
 #include <algorithm>
@@ -71,7 +73,7 @@ class SphericalAverage {
     s_.resize(N_, static_cast<T>(0.0));  // size = N_
 
     std::copy_n(unnormalized_vectors, N_ * M_, p_.begin());
-    for (size_t n = 0; n < N_; n++) {
+    for (size_t n = 0; n < N_; ++n) {
       NormalizeVector(M_, &p_[n * M_]);
     }
   }
@@ -119,7 +121,7 @@ class SphericalAverage {
  private:
   auto Dot(size_t len, const T* x1, const T* x2) -> T {
     T y = static_cast<T>(0.0);
-    for (size_t l = 0; l < len; l++) {
+    for (size_t l = 0; l < len; ++l) {
       y += x1[l] * x2[l];
     }
     return y;
@@ -129,7 +131,7 @@ class SphericalAverage {
     T norm = sqrt(Dot(len, x, x));
     if (norm > 0.0) {
       T scale_factor = (static_cast<T>(1.0)) / norm;
-      for (size_t l = 0; l < len; l++) {
+      for (size_t l = 0; l < len; ++l) {
         x[l] *= scale_factor;
       }
       return true;
@@ -141,12 +143,12 @@ class SphericalAverage {
 
   auto NormalizeWeight(size_t len, T* x) -> bool {
     T sum = 0.0;
-    for (size_t l = 0; l < len; l++) {
+    for (size_t l = 0; l < len; ++l) {
       sum += x[l];
     }
     if (sum > 0.0) {
       T scale_factor = (static_cast<T>(1.0)) / sum;
-      for (size_t l = 0; l < len; l++) {
+      for (size_t l = 0; l < len; ++l) {
         x[l] *= scale_factor;
       }
       return true;
@@ -158,8 +160,8 @@ class SphericalAverage {
 
   void WeightedSum(const T* weights, const T* x, T* y) {
     std::fill_n(y, M_, static_cast<T>(0.0));
-    for (size_t n = 0; n < N_; n++) {
-      for (size_t m = 0; m < M_; m++) {
+    for (size_t n = 0; n < N_; ++n) {
+      for (size_t m = 0; m < M_; ++m) {
         y[m] += weights[n] * x[n * M_ + m];
       }
     }
@@ -188,7 +190,7 @@ class SphericalAverage {
 
   void UpdateRV() {
     T sum_w_c_s = 0.0;
-    for (size_t n = 0; n < N_; n++) {
+    for (size_t n = 0; n < N_; ++n) {
       T cos_th = Dot(M_, &p_[n * M_], q_.data());
       s_[n] = (static_cast<T>(1.0)) /
               (Sinc(acos(cos_th)) + std::numeric_limits<T>::epsilon());
@@ -196,13 +198,13 @@ class SphericalAverage {
       T c_s = cos_th * s_[n];
       sum_w_c_s += w_[n] * c_s;
 
-      for (size_t m = 0; m < M_; m++) {
+      for (size_t m = 0; m < M_; ++m) {
         r_[n * M_ + m] = p_[n * M_ + m] * s_[n] - q_[m] * c_s;
       }
     }
     T inv_sum_w_c_s =
         (static_cast<T>(1.0)) / (sum_w_c_s + std::numeric_limits<T>::epsilon());
-    for (size_t n = 0; n < N_; n++) {
+    for (size_t n = 0; n < N_; ++n) {
       v_[n] = w_[n] * s_[n] * inv_sum_w_c_s;
     }
   }
@@ -210,7 +212,7 @@ class SphericalAverage {
   void UpdateQ(T phi) {
     T alpha = cos(phi);
     T beta = Sinc(phi);
-    for (size_t m = 0; m < M_; m++) {
+    for (size_t m = 0; m < M_; ++m) {
       q_[m] = q_[m] * alpha + u_[m] * beta;
     }
   }
@@ -234,4 +236,5 @@ class SphericalAverage {
 };
 
 }  // namespace beatrice::common
-#endif
+
+#endif  // BEATRICE_COMMON_SPHERICAL_AVERAGE_H_

@@ -53,6 +53,7 @@ class ProcessorCoreBase {
   virtual auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  // NOLINTNEXTLINE(readability/casting)
   virtual auto SetIntonationIntensity(double /*intonation_intensity*/)
       -> ErrorCode {
     return ErrorCode::kSuccess;
@@ -60,6 +61,7 @@ class ProcessorCoreBase {
   virtual auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  // NOLINTNEXTLINE(readability/casting)
   virtual auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode {
     return ErrorCode::kSuccess;
@@ -67,7 +69,8 @@ class ProcessorCoreBase {
 
   virtual auto SetSpeakerMorphingWeight(int /*target_speaker*/,
                                         double /*morphing weight*/
-                                        ) -> ErrorCode {
+                                        )      // NOLINT(whitespace/parens)
+      -> ErrorCode {
     return ErrorCode::kSuccess;
   }
 

@@ -53,14 +53,17 @@ class ProcessorCore1 : public ProcessorCoreBase {
   auto SetInputGain(double /*input_gain*/) -> ErrorCode override;
   auto SetOutputGain(double /*output_gain*/) -> ErrorCode override;
   auto SetAverageSourcePitch(double /*average_pitch*/) -> ErrorCode override;
+  // NOLINTNEXTLINE(readability/casting)
   auto SetIntonationIntensity(double /*intonation_intensity*/)
       -> ErrorCode override;
   auto SetPitchCorrection(double /*pitch_correction*/) -> ErrorCode override;
+  // NOLINTNEXTLINE(readability/casting)
   auto SetPitchCorrectionType(int /*pitch_correction_type*/)
       -> ErrorCode override;
   auto SetSpeakerMorphingWeight(int /*target_speaker*/,
                                 double /*morphing weight*/
-                                ) -> ErrorCode override;
+                                )      // NOLINT(whitespace/parens)
+      -> ErrorCode override;
 
  private:
   class ConvertWithModelBlockSize {
