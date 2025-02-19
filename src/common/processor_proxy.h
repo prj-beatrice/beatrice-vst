@@ -41,8 +41,10 @@ class ProcessorProxy {
     return SyncParameter(param_id);
   }
   auto LoadModel(const std::filesystem::path& file) -> ErrorCode {
+    auto error_code = ErrorCode::kSuccess;
     if (!std::filesystem::exists(file)) {
-      return ErrorCode::kFileOpenError;
+      error_code = ErrorCode::kFileOpenError;
+      goto fail;
     }
     try {
       const auto toml_data = toml::parse(file);
@@ -55,21 +57,27 @@ class ProcessorProxy {
           core_ = std::make_unique<ProcessorCore1>(sample_rate_);
           break;
         default:
-          core_ = std::make_unique<ProcessorCoreUnloaded>();
-          break;
+          goto fail;
       }
       if (const auto err = core_->LoadModel(model_config, file);
           err != ErrorCode::kSuccess) {
         return err;
       }
     } catch (const toml::file_io_error) {
-      return ErrorCode::kFileOpenError;
+      error_code = ErrorCode::kFileOpenError;
+      goto fail;
     } catch (const toml::syntax_error) {
-      return ErrorCode::kTOMLSyntaxError;
+      error_code = ErrorCode::kTOMLSyntaxError;
+      goto fail;
     } catch (const std::exception& e) {
-      return ErrorCode::kUnknownError;
+      error_code = ErrorCode::kUnknownError;
+      goto fail;
     }
     return SyncAllParameters(ParameterID::kModel);
+
+  fail:
+    core_ = std::make_unique<ProcessorCoreUnloaded>();
+    return error_code;
   }
   auto Read(std::istream& is) -> ErrorCode;
   auto Write(std::ostream& os) const -> ErrorCode;
