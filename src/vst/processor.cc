@@ -223,7 +223,9 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
   return kResultOk;
 }
 
-// プリセット / プロジェクトをロードした時に呼ばれる
+// プロジェクトやプリセットをロードした時に呼ばれる。
+// kResultFalse を返した場合、StudioRack などでは
+// Controller::setComponentState が呼ばれなくなるため注意が必要。
 auto PLUGIN_API Processor::setState(IBStream* const state) -> tresult {
   std::lock_guard<std::mutex> lock(mtx_);
   int siz;

@@ -15,10 +15,7 @@ class ControllerCore {
   ParameterState parameter_state_;
   std::vector<ParameterID> updated_parameters_;
 
-  auto Read(std::istream& is) -> ErrorCode {
-    return parameter_state_.ReadOrSetDefault(is, kSchema);
-  }
-  void SetDefaultValues() { parameter_state_.SetDefaultValues(kSchema); }
+  ControllerCore() { parameter_state_.SetDefaultValues(kSchema); }
 };
 }  // namespace beatrice::common
 

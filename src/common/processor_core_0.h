@@ -3,6 +3,8 @@
 #ifndef BEATRICE_COMMON_PROCESSOR_CORE_0_H_
 #define BEATRICE_COMMON_PROCESSOR_CORE_0_H_
 
+#include <array>
+#include <filesystem>
 #include <vector>
 
 #include "beatricelib/beatrice.h"
@@ -31,7 +33,8 @@ class ProcessorCore0 : public ProcessorCoreBase {
         pitch_context_(Beatrice20a2_CreatePitchContext1()),
         waveform_context_(Beatrice20a2_CreateWaveformContext1()),
         input_gain_context_(sample_rate),
-        output_gain_context_(sample_rate) {}
+        output_gain_context_(sample_rate),
+        speaker_morphing_weights_() {}
   ~ProcessorCore0() override {
     Beatrice20a2_DestroyPhoneExtractor(phone_extractor_);
     Beatrice20a2_DestroyPitchEstimator(pitch_estimator_);
@@ -102,7 +105,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
   Gain::Context output_gain_context_;
 
   // モデルマージ
-  std::vector<float> speaker_morphing_weights_;
+  std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
   SphericalAverage<float> sph_avg_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }

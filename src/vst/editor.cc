@@ -194,7 +194,12 @@ void Editor::SyncValue(const ParamID param_id,
     // controller と editor で最大値が異なるため
     // setValueNormalized は正しく動かない
     control->setValue(static_cast<float>(voice_id));
-    if (voice_id == 0 || voice_id < static_cast<int>(control->getMax())) {
+    if (!model_config_.has_value()) {
+      portrait_view_->setBackground(nullptr);
+      portrait_description_->setText("");
+      tab_view_->selectTab(0);
+    } else if (voice_id == 0 ||
+               voice_id < static_cast<int>(control->getMax())) {
       portrait_view_->setBackground(
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
       portrait_description_->setText(reinterpret_cast<const char*>(
@@ -463,8 +468,8 @@ void Editor::valueChanged(CControl* const pControl) {
   } else if (auto* const control = dynamic_cast<FileSelector*>(pControl)) {
     const auto* const str_param = std::get_if<common::StringParameter>(&param);
     assert(str_param);
-    const auto file = control->GetPath();
-    auto error_code = str_param->ControllerSetValue(core, file.u8string());
+    const auto file = control->GetPath().u8string();
+    auto error_code = str_param->ControllerSetValue(core, file);
     if (error_code == common::ErrorCode::kFileOpenError ||
         error_code == common::ErrorCode::kTOMLSyntaxError) {
       // Controller とは別に Editor::SyncModelDescription でも改めて
@@ -472,8 +477,16 @@ void Editor::valueChanged(CControl* const pControl) {
       error_code = common::ErrorCode::kSuccess;
     }
     assert(error_code == common::ErrorCode::kSuccess);
-    error_code = controller->SetStringParameter(vst_param_id, file.u8string());
+    error_code = controller->SetStringParameter(vst_param_id, file);
     assert(error_code == common::ErrorCode::kSuccess);
+    // processor に通知
+    auto* const msg = controller->allocateMessage();
+    msg->setMessageID("param_change");
+    msg->getAttributes()->setBinary("param_id", &vst_param_id,
+                                    sizeof(vst_param_id));
+    msg->getAttributes()->setBinary("data", file.c_str(), file.size());
+    controller->sendMessage(msg);
+    msg->release();
   } else {
     assert(false);
   }
