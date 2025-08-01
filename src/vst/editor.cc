@@ -10,6 +10,7 @@
 #include <cstring>
 #include <memory>
 
+#include "beatricelib/beatrice.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
@@ -25,6 +26,7 @@
 #include "common/parameter_schema.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
+#include "vst/parameter.h"
 
 #ifdef BEATRICE_ONLY_FOR_LINTER_DO_NOT_COMPILE_WITH_THIS
 #include "vst/metadata.h.in"
@@ -159,6 +161,8 @@ auto PLUGIN_API Editor::open(void* const parent,
   // テキストに合わせてテキストボックスの位置が変わらない
   SyncModelDescription();
 
+  SyncSourcePitchRange();
+
   return true;
 }
 
@@ -177,10 +181,11 @@ void PLUGIN_API Editor::close() {
 }
 
 // DAW 側から GUI にパラメータ変更を伝える。
+// Voice など、controller と editor で最大値が異なるパラメータがあるため、
+// controller->setValueNormalized は使わない。
 // valueChanged からも controller を介して間接的に呼ばれる。
 // 引数じゃなくて core から値を取った方が良い？
-void Editor::SyncValue(const ParamID param_id,
-                       const ParamValue normalized_value) {
+void Editor::SyncValue(const ParamID param_id, const float plain_value) {
   if (!frame || !controls_.contains(param_id)) {
     return;
   }
@@ -189,13 +194,8 @@ void Editor::SyncValue(const ParamID param_id,
 
   // Voice は色々ややこしいので特別扱いする
   if (param_id == static_cast<ParamID>(ParameterID::kVoice)) {
-    const auto voice_id =
-        Denormalize(std::get<common::ListParameter>(
-                        common::kSchema.GetParameter(ParameterID::kVoice)),
-                    normalized_value);
-    // controller と editor で最大値が異なるため
-    // setValueNormalized は正しく動かない
-    control->setValue(static_cast<float>(voice_id));
+    const auto voice_id = static_cast<int>(std::round(plain_value));
+    control->setValue(plain_value);
     if (!model_config_.has_value()) {
       portrait_view_->setBackground(nullptr);
       portrait_description_->setText("");
@@ -227,9 +227,9 @@ void Editor::SyncValue(const ParamID param_id,
     if (voice_id > 0 && voice_id == static_cast<int>(voice_control->getMax())) {
       SyncVoiceMorphingDescription();
     }
-    control->setValueNormalized(static_cast<float>(normalized_value));
+    control->setValue(plain_value);
   } else {
-    control->setValueNormalized(static_cast<float>(normalized_value));
+    control->setValue(plain_value);
   }
   control->setDirty();
 }
@@ -244,9 +244,36 @@ void Editor::SyncStringValue(const ParamID param_id,
     auto* const model_selector = static_cast<FileSelector*>(control);
     model_selector->SetPath(value);
     SyncModelDescription();
+    SyncSourcePitchRange();
   } else {
     control->setText(reinterpret_cast<const char*>(value.c_str()));
   }
+}
+
+// 現在読み込まれているモデルをもとに
+// min_source_pitch, max_source_pitch の範囲を更新する。
+void Editor::SyncSourcePitchRange() {
+  if (!model_config_.has_value() || model_config_->model.VersionInt() < 0) {
+    return;
+  }
+  auto* const min_source_pitch_slider = static_cast<Slider*>(
+      controls_.at(static_cast<ParamID>(ParameterID::kMinSourcePitch)));
+  auto* const max_source_pitch_slider = static_cast<Slider*>(
+      controls_.at(static_cast<ParamID>(ParameterID::kMaxSourcePitch)));
+  // MIDI ノートナンバー
+  const auto min_source_pitch = 33.125f;
+  const auto version_to_max_source_pitch = std::array<float, 2>{
+      33.0f + (100 - 1) * (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE),
+      33.0f + (BEATRICE_20B1_PITCH_BINS - 1) *
+                  (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE)};
+  const auto max_source_pitch =
+      version_to_max_source_pitch[model_config_->model.VersionInt()];
+  min_source_pitch_slider->setMin(min_source_pitch);
+  max_source_pitch_slider->setMin(min_source_pitch);
+  min_source_pitch_slider->setMax(max_source_pitch);
+  max_source_pitch_slider->setMax(max_source_pitch);
+  min_source_pitch_slider->setDirty();
+  max_source_pitch_slider->setDirty();
 }
 
 // model_selector->getPath() をもとに
@@ -439,13 +466,13 @@ void Editor::valueChanged(CControl* const pControl) {
     // communicate 含めて controller の中に処理書いた方が明快？
     const auto* const num_param = std::get_if<common::NumberParameter>(&param);
     assert(num_param);
-    auto normalized_value = control->getValueNormalized();
-    const auto plain_value = Denormalize(*num_param, normalized_value);
+    const auto plain_value = control->getValue();
     if (plain_value ==
         std::get<double>(core.parameter_state_.GetValue(param_id))) {
       return;
     }
-    normalized_value = static_cast<float>(Normalize(*num_param, plain_value));
+    const auto normalized_value =
+        static_cast<float>(Normalize(*num_param, plain_value));
     const auto error_code = num_param->ControllerSetValue(core, plain_value);
     assert(error_code == common::ErrorCode::kSuccess);
     communicate(vst_param_id, normalized_value);
@@ -643,8 +670,12 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
       this, static_cast<int>(param_id), context.x,
       context.x + kElementWidth - kHandleWidth, handle_bmp, slider_bmp,
       VST3::StringConvert::convert(param->getInfo().units), font_, precision);
-  slider_control->setValueNormalized(
-      static_cast<float>(param->getNormalized()));
+  slider_control->setMin(param->GetMinPlain());
+  slider_control->setMax(param->GetMaxPlain());
+  slider_control->setDefaultValue(
+      param->toPlain(param->getInfo().defaultNormalizedValue));
+  slider_control->setValue(
+      static_cast<float>(param->toPlain(param->getNormalized())));
   context.column_elements.push_back(slider_control);
   slider_bmp->forget();
   handle_bmp->forget();
@@ -695,8 +726,8 @@ auto Editor::MakeCombobox(
     const auto name = VST3::StringConvert::convert(tmp_string128);
     control->addEntry(name.c_str());
   }
-  control->setValueNormalized(
-      static_cast<float>(controller->getParamNormalized(param_id)));
+  control->setValue(static_cast<float>(
+      param->toPlain(controller->getParamNormalized(param_id))));
   control->setFont(font_);
   control->setFontColor(font_color);
   context.column_elements.push_back(control);
@@ -895,8 +926,8 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
         this, static_cast<int>(param_id), 0, kElementWidth - kHandleWidth,
         handle_bmp, slider_bmp,
         VST3::StringConvert::convert(param->getInfo().units), font_, 2);
-    slider_control->setValueNormalized(
-        static_cast<float>(param->getNormalized()));
+    slider_control->setValue(
+        static_cast<float>(param->toPlain(param->getNormalized())));
     slider_control->setVisible(false);
 
     morphing_weights_view_->addView(slider_control);

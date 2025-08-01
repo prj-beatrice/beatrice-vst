@@ -152,14 +152,17 @@ auto PLUGIN_API Controller::setParamNormalized(
     const ParamID vst_param_id, const ParamValue normalized_value) -> tresult {
   const auto param_id = static_cast<common::ParameterID>(vst_param_id);
   const auto& param = common::kSchema.GetParameter(param_id);
+  float plain_value_for_editor;
   if (const auto* const num_param =
           std::get_if<common::NumberParameter>(&param)) {
-    core_.parameter_state_.SetValue(param_id,
-                                    Denormalize(*num_param, normalized_value));
+    const auto plain_value = Denormalize(*num_param, normalized_value);
+    core_.parameter_state_.SetValue(param_id, plain_value);
+    plain_value_for_editor = static_cast<float>(plain_value);
   } else if (const auto* const list_param =
                  std::get_if<common::ListParameter>(&param)) {
-    core_.parameter_state_.SetValue(param_id,
-                                    Denormalize(*list_param, normalized_value));
+    const auto plain_value = Denormalize(*list_param, normalized_value);
+    core_.parameter_state_.SetValue(param_id, plain_value);
+    plain_value_for_editor = static_cast<float>(plain_value);
   } else if (std::get_if<common::StringParameter>(&param)) {
     return kResultFalse;
   } else {
@@ -173,7 +176,7 @@ auto PLUGIN_API Controller::setParamNormalized(
     return result;
   }
   for (auto&& editor : editors_) {
-    editor->SyncValue(vst_param_id, normalized_value);
+    editor->SyncValue(vst_param_id, plain_value_for_editor);
   }
 
   return kResultTrue;

@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "vst3sdk/vstgui4/vstgui/lib/algorithm.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cbitmap.h"
 #include "vst3sdk/vstgui4/vstgui/lib/ccolor.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cdrawcontext.h"
@@ -26,16 +27,15 @@
 #include "vst3sdk/vstgui4/vstgui/lib/vstguibase.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
-// Beatrice
-#include "vst/parameter.h"
-
 namespace beatrice::vst {
 
 using VSTGUI::CBitmap;
 using VSTGUI::CButtonState;
 using VSTGUI::CColor;
 using VSTGUI::CControl;
+using VSTGUI::CCoord;
 using VSTGUI::CDrawContext;
+using VSTGUI::CDrawStyle;
 using VSTGUI::CFileExtension;
 using VSTGUI::CFontRef;
 using VSTGUI::CGraphicsPath;
@@ -51,11 +51,16 @@ using VSTGUI::CPoint;
 using VSTGUI::CRect;
 using VSTGUI::CTextLabel;
 using VSTGUI::IControlListener;
+using VSTGUI::kAliasing;
 using VSTGUI::kAntiAliasing;
 using VSTGUI::kCenterText;
+using VSTGUI::kDrawFilled;
+using VSTGUI::kDrawFilledAndStroked;
+using VSTGUI::kDrawStroked;
 using VSTGUI::kLineSolid;
 using VSTGUI::kMessageNotified;
 using VSTGUI::kTransparentCColor;
+using VSTGUI::plainToNormalized;
 using VSTGUI::SharedPointer;
 using VSTGUI::UTF8String;
 
@@ -156,10 +161,7 @@ class Slider : public CHorizontalSlider {
     auto text_rect = getViewSize();
     // text_rect.inset(textInset.x, textInset.y);
 
-    const auto& param =
-        common::kSchema.GetParameter(static_cast<common::ParameterID>(tag));
-    const auto denormalized_value = Denormalize(
-        std::get<common::NumberParameter>(param), getValueNormalized());
+    const auto denormalized_value = getValue();
 
     // 値を文字で表示
     auto value_string = std::string();
@@ -171,7 +173,7 @@ class Slider : public CHorizontalSlider {
                         std::chars_format::fixed, precision_);
       value_string.resize(ptr - std::to_address(value_string.begin()));
       value_string += " ";
-      value_string += static_cast<const char*>(units_.c_str());
+      value_string += units_;
     }
 
     const auto antialias = true;
