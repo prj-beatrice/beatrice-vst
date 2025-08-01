@@ -342,6 +342,22 @@ const ParameterSchema kSchema = [] {
            [](ProcessorProxy& vc, const int value) {
              return vc.GetCore()->SetPitchCorrectionType(value);
            })},
+      {ParameterID::kMinSourcePitch,
+       NumberParameter(
+           u8"MinSourcePitch"s, 33.125, 0.0, 128.0, u8""s, 128 * 8, u8"MinPit"s,
+           parameter_flag::kCanAutomate,
+           [](ControllerCore&, double) { return ErrorCode::kSuccess; },
+           [](ProcessorProxy& vc, const double value) {
+             return vc.GetCore()->SetMinSourcePitch(value);
+           })},
+      {ParameterID::kMaxSourcePitch,
+       NumberParameter(
+           u8"MaxSourcePitch"s, 80.875, 0.0, 128.0, u8""s, 128 * 8, u8"MaxPit"s,
+           parameter_flag::kCanAutomate,
+           [](ControllerCore&, double) { return ErrorCode::kSuccess; },
+           [](ProcessorProxy& vc, const double value) {
+             return vc.GetCore()->SetMaxSourcePitch(value);
+           })},
   });
 
   for (auto i = 0; i < kMaxNSpeakers + 1;

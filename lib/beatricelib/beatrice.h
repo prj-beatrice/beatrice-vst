@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Project Beatrice
+// Copyright (c) 2025 Project Beatrice
 
 #ifndef BEATRICE_H_
 #define BEATRICE_H_
@@ -10,11 +10,14 @@ extern "C" {
 #define BEATRICE_IN_HOP_LENGTH 160
 #define BEATRICE_OUT_HOP_LENGTH 240
 #define BEATRICE_PHONE_CHANNELS 256
-#define BEATRICE_PITCH_BINS 384
 #define BEATRICE_PITCH_BINS_PER_OCTAVE 96
 #define BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS 256
 #define BEATRICE_IN_SAMPLE_RATE 16000
 #define BEATRICE_OUT_SAMPLE_RATE 24000
+
+#define BEATRICE_20A2_PITCH_BINS 384
+
+#define BEATRICE_20B1_PITCH_BINS 384
 
 enum Beatrice_ErrorCode {
   Beatrice_kSuccess = 0,
@@ -54,7 +57,7 @@ Beatrice_ErrorCode Beatrice20a2_ReadPhoneExtractorParameters(
 void Beatrice20a2_ExtractPhone1(
     const Beatrice20a2_PhoneExtractor* phone_extractor,
     const float* input,  // BEATRICE_IN_HOP_LENGTH
-    float* output,       // BEATRICE_PHONE_CHANNELS
+    float* output,       // BEATRICE_20A2_PHONE_CHANNELS
     Beatrice20a2_PhoneContext1* ctx);
 // Pitch Estimator
 Beatrice20a2_PitchEstimator* Beatrice20a2_CreatePitchEstimator(void);
@@ -65,6 +68,14 @@ void Beatrice20a2_DestroyPitchContext1(Beatrice20a2_PitchContext1* ctx);
 Beatrice_ErrorCode Beatrice20a2_ReadPitchEstimatorParameters(
     Beatrice20a2_PitchEstimator* pitch_estimator,
     const char* filename  // UTF-8
+);
+void Beatrice20a2_SetMinQuantizedPitch(
+    Beatrice20a2_PitchContext1* ctx,
+    int min_quantized_pitch  // 1 to BEATRICE_20A2_PITCH_BINS - 1
+);
+void Beatrice20a2_SetMaxQuantizedPitch(
+    Beatrice20a2_PitchContext1* ctx,
+    int max_quantized_pitch  // 1 to BEATRICE_20A2_PITCH_BINS - 1
 );
 void Beatrice20a2_EstimatePitch1(
     const Beatrice20a2_PitchEstimator* const pitch_estimator,
@@ -129,7 +140,7 @@ Beatrice_ErrorCode Beatrice20b1_ReadPhoneExtractorParameters(
 void Beatrice20b1_ExtractPhone1(
     const Beatrice20b1_PhoneExtractor* phone_extractor,
     const float* input,  // BEATRICE_IN_HOP_LENGTH
-    float* output,       // BEATRICE_PHONE_CHANNELS
+    float* output,       // BEATRICE_20B1_PHONE_CHANNELS
     Beatrice20b1_PhoneContext1* ctx);
 // Pitch Estimator
 Beatrice20b1_PitchEstimator* Beatrice20b1_CreatePitchEstimator(void);
@@ -140,6 +151,14 @@ void Beatrice20b1_DestroyPitchContext1(Beatrice20b1_PitchContext1* ctx);
 Beatrice_ErrorCode Beatrice20b1_ReadPitchEstimatorParameters(
     Beatrice20b1_PitchEstimator* pitch_estimator,
     const char* filename  // UTF-8
+);
+void Beatrice20b1_SetMinQuantizedPitch(
+    Beatrice20b1_PitchContext1* ctx,
+    int min_quantized_pitch  // 1 to BEATRICE_20B1_PITCH_BINS - 1
+);
+void Beatrice20b1_SetMaxQuantizedPitch(
+    Beatrice20b1_PitchContext1* ctx,
+    int max_quantized_pitch  // 1 to BEATRICE_20B1_PITCH_BINS - 1
 );
 void Beatrice20b1_EstimatePitch1(
     const Beatrice20b1_PitchEstimator* const pitch_estimator,

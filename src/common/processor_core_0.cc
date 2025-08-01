@@ -115,7 +115,7 @@ void ProcessorCore0::Process1(const float* const input, float* const output) {
   }
   quantized_pitch =
       std::clamp(static_cast<int>(std::round(tmp_quantized_pitch)), 1,
-                 BEATRICE_PITCH_BINS - 1);
+                 BEATRICE_20A2_PITCH_BINS - 1);
   std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker;
   if (target_speaker_ == n_speakers_) {
     if (!sph_avg_.Update()) {
@@ -286,6 +286,32 @@ auto ProcessorCore0::SetPitchCorrectionType(const int new_pitch_correction_type)
     return ErrorCode::kInvalidPitchCorrectionType;
   }
   pitch_correction_type_ = new_pitch_correction_type;
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore0::SetMinSourcePitch(const double new_min_source_pitch)
+    -> ErrorCode {
+  min_source_pitch_ = std::clamp(new_min_source_pitch, 0.0, 128.0);
+  Beatrice20a2_SetMinQuantizedPitch(
+      pitch_context_,
+      std::clamp(static_cast<int>(
+                     std::round((min_source_pitch_ - 33.0) *
+                                    (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0) +
+                                55.0)),
+                 1, BEATRICE_20A2_PITCH_BINS - 1));
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore0::SetMaxSourcePitch(const double new_max_source_pitch)
+    -> ErrorCode {
+  max_source_pitch_ = std::clamp(new_max_source_pitch, 0.0, 128.0);
+  Beatrice20a2_SetMaxQuantizedPitch(
+      pitch_context_,
+      std::clamp(static_cast<int>(
+                     std::round((max_source_pitch_ - 33.0) *
+                                    (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0) +
+                                55.0)),
+                 1, BEATRICE_20A2_PITCH_BINS - 1));
   return ErrorCode::kSuccess;
 }
 

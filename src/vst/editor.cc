@@ -123,6 +123,8 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
                kTransparentCColor, kDarkColorScheme.on_surface);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2);
   EndGroup(context);
   EndColumn(context);
 
