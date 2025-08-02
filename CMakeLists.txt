@@ -63,6 +63,7 @@ smtg_add_vst3plugin(${target}
     src/common/parameter_state.cc
     src/common/processor_core_0.cc
     src/common/processor_core_1.cc
+    src/common/processor_core_2.cc
     src/common/processor_proxy.cc
     src/vst/controller.cc
     src/vst/editor.cc

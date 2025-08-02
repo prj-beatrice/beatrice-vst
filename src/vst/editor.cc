@@ -136,6 +136,7 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kVoice),
                kDarkColorScheme.primary, kDarkColorScheme.on_primary);
   MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0);
   MakeModelVoiceDescription(context);
   EndGroup(context);
   EndColumn(context);
@@ -162,6 +163,7 @@ auto PLUGIN_API Editor::open(void* const parent,
   SyncModelDescription();
 
   SyncSourcePitchRange();
+  SyncParameterAvailability();
 
   return true;
 }
@@ -245,6 +247,7 @@ void Editor::SyncStringValue(const ParamID param_id,
     model_selector->SetPath(value);
     SyncModelDescription();
     SyncSourcePitchRange();
+    SyncParameterAvailability();
   } else {
     control->setText(reinterpret_cast<const char*>(value.c_str()));
   }
@@ -262,18 +265,34 @@ void Editor::SyncSourcePitchRange() {
       controls_.at(static_cast<ParamID>(ParameterID::kMaxSourcePitch)));
   // MIDI ノートナンバー
   const auto min_source_pitch = 33.125f;
-  const auto version_to_max_source_pitch = std::array<float, 2>{
-      33.0f + (100 - 1) * (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE),
+  const auto version_to_max_source_pitch = std::array<float, 3>{
+      33.0f + (BEATRICE_20A2_PITCH_BINS - 1) *
+                  (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE),
       33.0f + (BEATRICE_20B1_PITCH_BINS - 1) *
+                  (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE),
+      33.0f + (BEATRICE_20RC0_PITCH_BINS - 1) *
                   (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE)};
-  const auto max_source_pitch =
-      version_to_max_source_pitch[model_config_->model.VersionInt()];
+  const auto max_source_pitch = version_to_max_source_pitch[std::min(
+      model_config_->model.VersionInt(),
+      static_cast<int>(version_to_max_source_pitch.size()) - 1)];
   min_source_pitch_slider->setMin(min_source_pitch);
   max_source_pitch_slider->setMin(min_source_pitch);
   min_source_pitch_slider->setMax(max_source_pitch);
   max_source_pitch_slider->setMax(max_source_pitch);
   min_source_pitch_slider->setDirty();
   max_source_pitch_slider->setDirty();
+}
+
+// 現在読み込まれているモデルをもとに
+// パラメータの有効/無効を更新する。
+void Editor::SyncParameterAvailability() {
+  if (!model_config_.has_value() || model_config_->model.VersionInt() < 0) {
+    return;
+  }
+  auto* const vq_num_neighbors_slider = static_cast<Slider*>(
+      controls_.at(static_cast<ParamID>(ParameterID::kVQNumNeighbors)));
+  vq_num_neighbors_slider->SetEnabled(model_config_->model.VersionInt() >= 2);
+  vq_num_neighbors_slider->setDirty();
 }
 
 // model_selector->getPath() をもとに

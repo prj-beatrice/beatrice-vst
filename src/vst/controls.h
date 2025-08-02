@@ -165,15 +165,19 @@ class Slider : public CHorizontalSlider {
 
     // 値を文字で表示
     auto value_string = std::string();
-    {
+    if (enabled_) {
       value_string.resize(8);
       const auto [ptr, ec] =
           std::to_chars(std::to_address(value_string.begin()),
                         std::to_address(value_string.end()), denormalized_value,
                         std::chars_format::fixed, precision_);
       value_string.resize(ptr - std::to_address(value_string.begin()));
-      value_string += " ";
-      value_string += units_;
+      if (!units_.empty()) {
+        value_string += " ";
+        value_string += units_;
+      }
+    } else {
+      value_string = "Disabled";
     }
 
     const auto antialias = true;
@@ -194,10 +198,27 @@ class Slider : public CHorizontalSlider {
     setDirty(false);
   }
 
+  void SetEnabled(const bool enabled) {
+    if (enabled_ == enabled) {
+      return;
+    }
+    enabled_ = enabled;
+    if (enabled_) {
+      setMouseEnabled(true);
+      setWantsFocus(true);
+    } else {
+      setMouseEnabled(false);
+      setWantsFocus(false);
+    }
+  }
+
+  [[nodiscard]] auto IsEnabled() const -> bool { return enabled_; }
+
  private:
   std::string units_;
   CFontRef font_ref_;
   int precision_;
+  bool enabled_ = true;
 };
 
 class FileSelector : public CTextLabel {

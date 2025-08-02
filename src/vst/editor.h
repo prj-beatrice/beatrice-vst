@@ -74,6 +74,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   };
   void SyncSourcePitchRange();
   void SyncModelDescription();
+  void SyncParameterAvailability();
   static void BeginColumn(Context&, int width, const CColor& back_color);
   auto EndColumn(Context&) -> CView*;
   auto BeginGroup(Context&, const std::u8string& name) -> CView*;

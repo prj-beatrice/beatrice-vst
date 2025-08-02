@@ -24,6 +24,8 @@ struct ModelConfig {
         return 0;
       } else if (version == "2.0.0-beta.1") {
         return 1;
+      } else if (version == "2.0.0-rc.0") {
+        return 2;
       } else {
         return -1;
       }

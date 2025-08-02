@@ -358,6 +358,15 @@ const ParameterSchema kSchema = [] {
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetMaxSourcePitch(value);
            })},
+      {ParameterID::kVQNumNeighbors,
+       NumberParameter(
+           u8"VQNumNeighbors"s, 0.0, 0.0, 8.0, u8""s, 8, u8"VQNbr"s,
+           parameter_flag::kCanAutomate,
+           [](ControllerCore&, double) { return ErrorCode::kSuccess; },
+           [](ProcessorProxy& vc, const double value) {
+             return vc.GetCore()->SetVQNumNeighbors(
+                 static_cast<int>(std::round(value)));
+           })},
   });
 
   for (auto i = 0; i < kMaxNSpeakers + 1;

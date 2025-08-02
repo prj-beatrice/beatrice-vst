@@ -12,6 +12,7 @@
 #include "common/processor_core.h"
 #include "common/processor_core_0.h"
 #include "common/processor_core_1.h"
+#include "common/processor_core_2.h"
 
 namespace beatrice::common {
 
@@ -55,6 +56,9 @@ class ProcessorProxy {
           break;
         case 1:
           core_ = std::make_unique<ProcessorCore1>(sample_rate_);
+          break;
+        case 2:
+          core_ = std::make_unique<ProcessorCore2>(sample_rate_);
           break;
         default:
           goto fail;

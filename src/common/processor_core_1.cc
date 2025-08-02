@@ -46,7 +46,7 @@ auto ProcessorCore1::Process(const float* const input, float* const output,
 }
 
 void ProcessorCore1::Process1(const float* const input, float* const output) {
-  std::array<float, BEATRICE_PHONE_CHANNELS> phone;
+  std::array<float, BEATRICE_20B1_PHONE_CHANNELS> phone;
   Beatrice20b1_ExtractPhone1(phone_extractor_, input, phone.data(),
                              phone_context_);
   int quantized_pitch;
