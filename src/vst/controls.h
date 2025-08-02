@@ -206,9 +206,11 @@ class Slider : public CHorizontalSlider {
     if (enabled_) {
       setMouseEnabled(true);
       setWantsFocus(true);
+      setAlphaValue(1.0);
     } else {
       setMouseEnabled(false);
       setWantsFocus(false);
+      setAlphaValue(0.3);
     }
   }
 
