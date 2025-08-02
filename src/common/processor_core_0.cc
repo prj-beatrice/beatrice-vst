@@ -148,7 +148,17 @@ auto ProcessorCore0::ResetContext() -> ErrorCode {
   phone_context_ = Beatrice20a2_CreatePhoneContext1();
   pitch_context_ = Beatrice20a2_CreatePitchContext1();
   waveform_context_ = Beatrice20a2_CreateWaveformContext1();
-  return ErrorCode::kSuccess;
+  // パラメータを再設定
+  auto error = ErrorCode::kSuccess;
+  if (const auto err = SetMinSourcePitch(min_source_pitch_);
+      error == ErrorCode::kSuccess) {
+    error = err;
+  }
+  if (const auto err = SetMaxSourcePitch(max_source_pitch_);
+      error == ErrorCode::kSuccess) {
+    error = err;
+  }
+  return error;
 }
 
 auto ProcessorCore0::LoadModel(const ModelConfig& /*config*/,
