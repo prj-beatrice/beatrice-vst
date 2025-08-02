@@ -112,14 +112,14 @@ add_dependencies(distribution ${target})
 if(NOT BEATRICE_DEV_VERSION)
     set(PARAPHERNALIA_DIR ${DISTRIBUTION_DIR}/beatrice_paraphernalia_jvs)
     file(MAKE_DIRECTORY ${PARAPHERNALIA_DIR})
-    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/beta.1/beta.1/beatrice_paraphernalia_jvs_076_01950000")
+    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_todo")
     set(PARAPHERNALIA_FILES
         beatrice_paraphernalia_jvs.toml
         phone_extractor.bin
         pitch_estimator.bin
         speaker_embeddings.bin
-        formant_shift_embeddings.bin
         waveform_generator.bin
+        embedding_setter.bin
         noimage.png
     )
     foreach(file ${PARAPHERNALIA_FILES})

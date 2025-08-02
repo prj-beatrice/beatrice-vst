@@ -21,7 +21,7 @@ jobs:
           submodules: recursive
 
       - name: Download beatrice.lib
-        run: curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/beta.1/beta.1/beatrice.lib
+        run: curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice.lib
 
       - name: Configure CMake (with dev version suffix)
         if: startsWith(github.ref, 'refs/heads/') || startsWith(github.ref, 'refs/pull/')
