@@ -273,8 +273,8 @@ auto ProcessorCore2::SetTargetSpeaker(const int new_target_speaker_id)
 
 auto ProcessorCore2::SetFormantShift(const double new_formant_shift)
     -> ErrorCode {
-  const auto formant_shift = std::clamp(new_formant_shift, -2.0, 2.0);
-  const auto index = static_cast<int>(std::round(formant_shift * 2.0 + 4.0));
+  formant_shift_ = std::clamp(new_formant_shift, -2.0, 2.0);
+  const auto index = static_cast<int>(std::round(formant_shift_ * 2.0 + 4.0));
   assert(0 <= index && index < 9);
   assert(static_cast<int>(formant_shift_embeddings_.size()) ==
          9 * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
@@ -283,7 +283,6 @@ auto ProcessorCore2::SetFormantShift(const double new_formant_shift)
       formant_shift_embeddings_.data() +
           index * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
       embedding_context_, waveform_context_);
-  formant_shift_ = formant_shift;
   return ErrorCode::kSuccess;
 }
 
@@ -338,11 +337,11 @@ auto ProcessorCore2::SetPitchCorrectionType(const int new_pitch_correction_type)
 
 auto ProcessorCore2::SetMinSourcePitch(const double new_min_source_pitch)
     -> ErrorCode {
-  const auto min_source_pitch = std::clamp(new_min_source_pitch, 0.0, 128.0);
+  min_source_pitch_ = std::clamp(new_min_source_pitch, 0.0, 128.0);
   Beatrice20rc0_SetMinQuantizedPitch(
       pitch_context_,
       std::clamp(
-          static_cast<int>(std::round((min_source_pitch - 33.0) *
+          static_cast<int>(std::round((min_source_pitch_ - 33.0) *
                                       (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0))),
           1, BEATRICE_20RC0_PITCH_BINS - 1));
   return ErrorCode::kSuccess;
@@ -350,11 +349,11 @@ auto ProcessorCore2::SetMinSourcePitch(const double new_min_source_pitch)
 
 auto ProcessorCore2::SetMaxSourcePitch(const double new_max_source_pitch)
     -> ErrorCode {
-  const auto max_source_pitch = std::clamp(new_max_source_pitch, 0.0, 128.0);
+  max_source_pitch_ = std::clamp(new_max_source_pitch, 0.0, 128.0);
   Beatrice20rc0_SetMaxQuantizedPitch(
       pitch_context_,
       std::clamp(
-          static_cast<int>(std::round((max_source_pitch - 33.0) *
+          static_cast<int>(std::round((max_source_pitch_ - 33.0) *
                                       (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0))),
           1, BEATRICE_20RC0_PITCH_BINS - 1));
   return ErrorCode::kSuccess;
@@ -362,8 +361,8 @@ auto ProcessorCore2::SetMaxSourcePitch(const double new_max_source_pitch)
 
 auto ProcessorCore2::SetVQNumNeighbors(const int new_vq_num_neighbors)
     -> ErrorCode {
-  const auto vq_num_neighbors = std::clamp(new_vq_num_neighbors, 0, 8);
-  Beatrice20rc0_SetVQNumNeighbors(phone_context_, vq_num_neighbors);
+  vq_num_neighbors_ = std::clamp(new_vq_num_neighbors, 0, 8);
+  Beatrice20rc0_SetVQNumNeighbors(phone_context_, vq_num_neighbors_);
   return ErrorCode::kSuccess;
 }
 
