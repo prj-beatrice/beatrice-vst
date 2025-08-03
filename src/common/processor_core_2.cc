@@ -341,11 +341,10 @@ auto ProcessorCore2::SetMinSourcePitch(const double new_min_source_pitch)
   const auto min_source_pitch = std::clamp(new_min_source_pitch, 0.0, 128.0);
   Beatrice20rc0_SetMinQuantizedPitch(
       pitch_context_,
-      std::clamp(static_cast<int>(
-                     std::round((min_source_pitch - 33.0) *
-                                    (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0) +
-                                55.0)),
-                 1, BEATRICE_20RC0_PITCH_BINS - 1));
+      std::clamp(
+          static_cast<int>(std::round((min_source_pitch - 33.0) *
+                                      (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0))),
+          1, BEATRICE_20RC0_PITCH_BINS - 1));
   return ErrorCode::kSuccess;
 }
 
@@ -354,11 +353,10 @@ auto ProcessorCore2::SetMaxSourcePitch(const double new_max_source_pitch)
   const auto max_source_pitch = std::clamp(new_max_source_pitch, 0.0, 128.0);
   Beatrice20rc0_SetMaxQuantizedPitch(
       pitch_context_,
-      std::clamp(static_cast<int>(
-                     std::round((max_source_pitch - 33.0) *
-                                    (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0) +
-                                55.0)),
-                 1, BEATRICE_20RC0_PITCH_BINS - 1));
+      std::clamp(
+          static_cast<int>(std::round((max_source_pitch - 33.0) *
+                                      (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0))),
+          1, BEATRICE_20RC0_PITCH_BINS - 1));
   return ErrorCode::kSuccess;
 }
 
