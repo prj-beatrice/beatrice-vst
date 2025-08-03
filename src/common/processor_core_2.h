@@ -128,7 +128,7 @@ class ProcessorCore2 : public ProcessorCoreBase {
   void Process1(const float* input, float* output);
 
   // Key-value speaker embedding を 1 ブロック設定する。
-  // 既に全ブロック設定済みであれば何も処理を行わなず false を返す。
+  // 既に全ブロック設定済みであれば何も処理を行わず false を返す。
   // モデルが読み込まれているかなどの前提条件はチェックしないので、使う側で管理する。
   auto SetKeyValueSpeakerEmbedding() -> bool {
     if (key_value_speaker_embedding_set_count_ < BEATRICE_20RC0_N_BLOCKS) {
@@ -143,4 +143,4 @@ class ProcessorCore2 : public ProcessorCoreBase {
 
 }  // namespace beatrice::common
 
-#endif  // BEATRICE_COMMON_PROCESSOR_CORE_1_H_
+#endif  // BEATRICE_COMMON_PROCESSOR_CORE_2_H_
