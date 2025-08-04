@@ -46,7 +46,7 @@ auto ProcessorCore1::Process(const float* const input, float* const output,
 }
 
 void ProcessorCore1::Process1(const float* const input, float* const output) {
-  std::array<float, BEATRICE_PHONE_CHANNELS> phone;
+  std::array<float, BEATRICE_20B1_PHONE_CHANNELS> phone;
   Beatrice20b1_ExtractPhone1(phone_extractor_, input, phone.data(),
                              phone_context_);
   int quantized_pitch;
@@ -115,7 +115,7 @@ void ProcessorCore1::Process1(const float* const input, float* const output) {
   }
   quantized_pitch =
       std::clamp(static_cast<int>(std::round(tmp_quantized_pitch)), 1,
-                 BEATRICE_PITCH_BINS - 1);
+                 BEATRICE_20B1_PITCH_BINS - 1);
   std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker;
   if (target_speaker_ == n_speakers_) {
     if (!sph_avg_.Update()) {
@@ -148,7 +148,17 @@ auto ProcessorCore1::ResetContext() -> ErrorCode {
   phone_context_ = Beatrice20b1_CreatePhoneContext1();
   pitch_context_ = Beatrice20b1_CreatePitchContext1();
   waveform_context_ = Beatrice20b1_CreateWaveformContext1();
-  return ErrorCode::kSuccess;
+  // パラメータを再設定
+  auto error = ErrorCode::kSuccess;
+  if (const auto err = SetMinSourcePitch(min_source_pitch_);
+      error == ErrorCode::kSuccess) {
+    error = err;
+  }
+  if (const auto err = SetMaxSourcePitch(max_source_pitch_);
+      error == ErrorCode::kSuccess) {
+    error = err;
+  }
+  return error;
 }
 
 auto ProcessorCore1::LoadModel(const ModelConfig& /*config*/,
@@ -286,6 +296,30 @@ auto ProcessorCore1::SetPitchCorrectionType(const int new_pitch_correction_type)
     return ErrorCode::kInvalidPitchCorrectionType;
   }
   pitch_correction_type_ = new_pitch_correction_type;
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore1::SetMinSourcePitch(const double new_min_source_pitch)
+    -> ErrorCode {
+  min_source_pitch_ = std::clamp(new_min_source_pitch, 0.0, 128.0);
+  Beatrice20b1_SetMinQuantizedPitch(
+      pitch_context_,
+      std::clamp(
+          static_cast<int>(std::round((min_source_pitch_ - 33.0) *
+                                      (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0))),
+          1, BEATRICE_20B1_PITCH_BINS - 1));
+  return ErrorCode::kSuccess;
+}
+
+auto ProcessorCore1::SetMaxSourcePitch(const double new_max_source_pitch)
+    -> ErrorCode {
+  max_source_pitch_ = std::clamp(new_max_source_pitch, 0.0, 128.0);
+  Beatrice20b1_SetMaxQuantizedPitch(
+      pitch_context_,
+      std::clamp(
+          static_cast<int>(std::round((max_source_pitch_ - 33.0) *
+                                      (BEATRICE_PITCH_BINS_PER_OCTAVE / 12.0))),
+          1, BEATRICE_20B1_PITCH_BINS - 1));
   return ErrorCode::kSuccess;
 }
 

@@ -83,6 +83,8 @@ class LinearParameter : public Steinberg::Vst::Parameter {
       -> ParamValue SMTG_OVERRIDE;
   [[nodiscard]] auto toNormalized(ParamValue plainValue) const
       -> ParamValue SMTG_OVERRIDE;
+  [[nodiscard]] auto GetMinPlain() const -> ParamValue { return minPlain; }
+  [[nodiscard]] auto GetMaxPlain() const -> ParamValue { return maxPlain; }
 
   // NOLINTNEXTLINE(modernize-use-trailing-return-type,google-default-arguments)
   OBJ_METHODS(LinearParameter, Parameter)

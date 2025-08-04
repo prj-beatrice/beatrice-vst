@@ -66,6 +66,15 @@ class ProcessorCoreBase {
       -> ErrorCode {
     return ErrorCode::kSuccess;
   }
+  virtual auto SetMinSourcePitch(double /*min_source_pitch*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetMaxSourcePitch(double /*max_source_pitch*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
+  virtual auto SetVQNumNeighbors(int /*vq_num_neighbors*/) -> ErrorCode {
+    return ErrorCode::kSuccess;
+  }
 
   virtual auto SetSpeakerMorphingWeight(int /*target_speaker*/,
                                         double /*morphing weight*/

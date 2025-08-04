@@ -34,7 +34,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   auto PLUGIN_API open(void* parent, const PlatformType& platformType)
       -> bool SMTG_OVERRIDE;
   void PLUGIN_API close() SMTG_OVERRIDE;
-  void SyncValue(ParamID param_id, ParamValue value);
+  void SyncValue(ParamID param_id, float plain_value);
   void SyncStringValue(ParamID param_id, const std::u8string& value);
   void valueChanged(CControl* pControl) SMTG_OVERRIDE;
   // auto notify(CBaseObject* sender,
@@ -72,7 +72,9 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
     bool first_group = true;
     std::vector<CView*> column_elements;
   };
+  void SyncSourcePitchRange();
   void SyncModelDescription();
+  void SyncParameterAvailability();
   static void BeginColumn(Context&, int width, const CColor& back_color);
   auto EndColumn(Context&) -> CView*;
   auto BeginGroup(Context&, const std::u8string& name) -> CView*;

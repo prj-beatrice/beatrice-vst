@@ -54,6 +54,9 @@ enum class ParameterID : std::int16_t {
   kIntonationIntensity = 9,
   kPitchCorrection = 10,
   kPitchCorrectionType = 11,
+  kMinSourcePitch = 12,
+  kMaxSourcePitch = 13,
+  kVQNumNeighbors = 14,
   kAverageTargetPitchBase =
       100,  // Voice Morphing Mode の分も格納するため、要素数は ( kMaxNSpeakers
             // + 1 ) となる

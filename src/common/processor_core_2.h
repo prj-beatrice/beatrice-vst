@@ -1,7 +1,7 @@
 // Copyright (c) 2024-2025 Project Beatrice and Contributors
 
-#ifndef BEATRICE_COMMON_PROCESSOR_CORE_1_H_
-#define BEATRICE_COMMON_PROCESSOR_CORE_1_H_
+#ifndef BEATRICE_COMMON_PROCESSOR_CORE_2_H_
+#define BEATRICE_COMMON_PROCESSOR_CORE_2_H_
 
 #include <array>
 #include <filesystem>
@@ -19,29 +19,33 @@
 
 namespace beatrice::common {
 
-// 2.0.0-beta.1 用の信号処理クラス
-class ProcessorCore1 : public ProcessorCoreBase {
+// 2.0.0-rc.0 用の信号処理クラス
+class ProcessorCore2 : public ProcessorCoreBase {
  public:
-  explicit ProcessorCore1(const double sample_rate)
+  explicit ProcessorCore2(const double sample_rate)
       : ProcessorCoreBase(),
         any_freq_in_out_(sample_rate),
-        phone_extractor_(Beatrice20b1_CreatePhoneExtractor()),
-        pitch_estimator_(Beatrice20b1_CreatePitchEstimator()),
-        waveform_generator_(Beatrice20b1_CreateWaveformGenerator()),
+        phone_extractor_(Beatrice20rc0_CreatePhoneExtractor()),
+        pitch_estimator_(Beatrice20rc0_CreatePitchEstimator()),
+        waveform_generator_(Beatrice20rc0_CreateWaveformGenerator()),
+        embedding_setter_(Beatrice20rc0_CreateEmbeddingSetter()),
         gain_(),
-        phone_context_(Beatrice20b1_CreatePhoneContext1()),
-        pitch_context_(Beatrice20b1_CreatePitchContext1()),
-        waveform_context_(Beatrice20b1_CreateWaveformContext1()),
+        phone_context_(Beatrice20rc0_CreatePhoneContext1()),
+        pitch_context_(Beatrice20rc0_CreatePitchContext1()),
+        waveform_context_(Beatrice20rc0_CreateWaveformContext1()),
+        embedding_context_(Beatrice20rc0_CreateEmbeddingContext()),
         input_gain_context_(sample_rate),
         output_gain_context_(sample_rate),
         speaker_morphing_weights_() {}
-  ~ProcessorCore1() override {
-    Beatrice20b1_DestroyPhoneExtractor(phone_extractor_);
-    Beatrice20b1_DestroyPitchEstimator(pitch_estimator_);
-    Beatrice20b1_DestroyWaveformGenerator(waveform_generator_);
-    Beatrice20b1_DestroyPhoneContext1(phone_context_);
-    Beatrice20b1_DestroyPitchContext1(pitch_context_);
-    Beatrice20b1_DestroyWaveformContext1(waveform_context_);
+  ~ProcessorCore2() override {
+    Beatrice20rc0_DestroyPhoneExtractor(phone_extractor_);
+    Beatrice20rc0_DestroyPitchEstimator(pitch_estimator_);
+    Beatrice20rc0_DestroyWaveformGenerator(waveform_generator_);
+    Beatrice20rc0_DestroyEmbeddingSetter(embedding_setter_);
+    Beatrice20rc0_DestroyPhoneContext1(phone_context_);
+    Beatrice20rc0_DestroyPitchContext1(pitch_context_);
+    Beatrice20rc0_DestroyWaveformContext1(waveform_context_);
+    Beatrice20rc0_DestroyEmbeddingContext(embedding_context_);
   }
   [[nodiscard]] auto GetVersion() const -> int override;
   auto Process(const float* input, float* output, int n_samples)
@@ -65,6 +69,7 @@ class ProcessorCore1 : public ProcessorCoreBase {
       -> ErrorCode override;
   auto SetMinSourcePitch(double /*min_source_pitch*/) -> ErrorCode override;
   auto SetMaxSourcePitch(double /*max_source_pitch*/) -> ErrorCode override;
+  auto SetVQNumNeighbors(int /*vq_num_neighbors*/) -> ErrorCode override;
   auto SetSpeakerMorphingWeight(int /*target_speaker*/,
                                 double /*morphing weight*/
                                 )      // NOLINT(whitespace/parens)
@@ -75,14 +80,14 @@ class ProcessorCore1 : public ProcessorCoreBase {
    public:
     ConvertWithModelBlockSize() = default;
     void operator()(const float* const input, float* const output,
-                    ProcessorCore1& processor_core) const {
+                    ProcessorCore2& processor_core) const {
       processor_core.Process1(input, output);
     }
   };
 
   std::filesystem::path model_file_;
   int target_speaker_ = 0;
-  double formant_shift_ = 0.0;
+  int formant_shift_ = 0;
   double pitch_shift_ = 0.0;
   int n_speakers_ = 0;
   double average_source_pitch_ = 52.0;
@@ -91,22 +96,29 @@ class ProcessorCore1 : public ProcessorCoreBase {
   int pitch_correction_type_ = 0;
   double min_source_pitch_ = 33.125;
   double max_source_pitch_ = 80.875;
+  int vq_num_neighbors_ = 0;
 
   resampler::AnyFreqInOut<ConvertWithModelBlockSize> any_freq_in_out_;
 
   // モデル
-  Beatrice20b1_PhoneExtractor* phone_extractor_;
-  Beatrice20b1_PitchEstimator* pitch_estimator_;
-  Beatrice20b1_WaveformGenerator* waveform_generator_;
-  std::vector<float> speaker_embeddings_;
+  Beatrice20rc0_PhoneExtractor* phone_extractor_;
+  Beatrice20rc0_PitchEstimator* pitch_estimator_;
+  Beatrice20rc0_WaveformGenerator* waveform_generator_;
+  Beatrice20rc0_EmbeddingSetter* embedding_setter_;
+  std::vector<float> codebooks_;
+  std::vector<float> additive_speaker_embeddings_;
   std::vector<float> formant_shift_embeddings_;
+  std::vector<float> key_value_speaker_embeddings_;
   Gain gain_;
   // 状態
-  Beatrice20b1_PhoneContext1* phone_context_;
-  Beatrice20b1_PitchContext1* pitch_context_;
-  Beatrice20b1_WaveformContext1* waveform_context_;
+  Beatrice20rc0_PhoneContext1* phone_context_;
+  Beatrice20rc0_PitchContext1* pitch_context_;
+  Beatrice20rc0_WaveformContext1* waveform_context_;
+  Beatrice20rc0_EmbeddingContext* embedding_context_;
   Gain::Context input_gain_context_;
   Gain::Context output_gain_context_;
+  int key_value_speaker_embedding_set_count_ = 0;
+  bool is_ready_to_set_speaker_ = false;
 
   // モデルマージ
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
@@ -114,8 +126,21 @@ class ProcessorCore1 : public ProcessorCoreBase {
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);
+
+  // Key-value speaker embedding を 1 ブロック設定する。
+  // 既に全ブロック設定済みであれば何も処理を行わず false を返す。
+  // モデルが読み込まれているかなどの前提条件はチェックしないので、使う側で管理する。
+  auto SetKeyValueSpeakerEmbedding() -> bool {
+    if (key_value_speaker_embedding_set_count_ < BEATRICE_20RC0_N_BLOCKS) {
+      Beatrice20rc0_SetKeyValueSpeakerEmbedding(
+          embedding_setter_, key_value_speaker_embedding_set_count_++,
+          embedding_context_, waveform_context_);
+      return true;
+    }
+    return false;
+  }
 };
 
 }  // namespace beatrice::common
 
-#endif  // BEATRICE_COMMON_PROCESSOR_CORE_1_H_
+#endif  // BEATRICE_COMMON_PROCESSOR_CORE_2_H_

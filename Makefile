@@ -3,7 +3,7 @@ all: release
 # GitHub Actions の windows-latest 環境でビルドされたものであり、
 # そこで使われているのと同じバージョンの Microsoft STL に依存している
 lib/beatricelib/beatrice.lib:
-	curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/beta.1/beta.1/beatrice.lib
+	curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice.lib
 
 build/vst: CMakeLists.txt
 	mkdir build
