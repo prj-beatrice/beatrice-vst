@@ -52,8 +52,10 @@ namespace BitmapFilter = VSTGUI::BitmapFilter;
 
 Editor::Editor(void* const controller)
     : VSTGUIEditor(controller),
-      font_(new CFontDesc(kNormalFont->getName(), 14)),
-      font_bold_(new CFontDesc(kNormalFont->getName(), 14, kBoldFace)),
+      font_(new CFontDesc("Segoe UI", 14)),
+      font_bold_(new CFontDesc("Segoe UI", 14, kBoldFace)),
+      font_description_(new CFontDesc("Meiryo", 12)),
+      font_version_(new CFontDesc("Segoe UI", 12)),
       tab_view_(),
       portrait_view_(),
       portrait_description_(),
@@ -99,7 +101,7 @@ auto PLUGIN_API Editor::open(void* const parent,
       (UTF8String("Ver. ") + FULL_VERSION_STR).data(), nullptr,
       CParamDisplay::kNoFrame);
   version_label->setBackColor(kTransparentCColor);
-  version_label->setFont(VSTGUI::kNormalFont);
+  version_label->setFont(font_version_);
   version_label->setFontColor(kDarkColorScheme.on_surface);
   version_label->setHoriAlign(CHoriTxtAlign::kRightText);
   header->addView(version_label);
@@ -861,7 +863,7 @@ auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
   model_voice_description_ = new ModelVoiceDescription(
       CRect(context.x, context.y, context.column_width - offset_x,
             kWindowHeight - kFooterHeight - kHeaderHeight),
-      VSTGUI::kNormalFont, kElementHeight, kElementMerginY + 4);
+      font_description_, kElementHeight, kElementMerginY + 4);
 
   context.column_elements.push_back(model_voice_description_);
 

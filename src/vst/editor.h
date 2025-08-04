@@ -91,7 +91,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   void SyncVoiceMorphingDescription();
 
   std::map<ParamID, CControl*> controls_;
-  CFontRef font_, font_bold_;
+  CFontRef font_, font_bold_, font_description_, font_version_;
   std::optional<common::ModelConfig> model_config_;
 
   ModelVoiceDescription* model_voice_description_;
