@@ -67,6 +67,8 @@ Editor::Editor(void* const controller)
 Editor::~Editor() {
   font_->forget();
   font_bold_->forget();
+  font_description_->forget();
+  font_version_->forget();
 }
 
 auto PLUGIN_API Editor::open(void* const parent,
