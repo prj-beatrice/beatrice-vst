@@ -117,9 +117,13 @@ auto PLUGIN_API Editor::open(void* const parent,
   BeginGroup(context, u8"General");
   MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1);
   MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2);
   MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch),
              2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2);
+  EndGroup(context);
+  BeginGroup(context, u8"Pitch Shift");
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
                kTransparentCColor, kDarkColorScheme.on_surface);
   MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
@@ -127,8 +131,6 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
                kTransparentCColor, kDarkColorScheme.on_surface);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2);
   EndGroup(context);
   EndColumn(context);
 
