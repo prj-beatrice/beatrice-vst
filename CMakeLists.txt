@@ -112,7 +112,7 @@ add_dependencies(distribution ${target})
 if(NOT BEATRICE_DEV_VERSION)
     set(PARAPHERNALIA_DIR ${DISTRIBUTION_DIR}/beatrice_paraphernalia_jvs)
     file(MAKE_DIRECTORY ${PARAPHERNALIA_DIR})
-    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_todo")
+    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_149_03000000")
     set(PARAPHERNALIA_FILES
         beatrice_paraphernalia_jvs.toml
         phone_extractor.bin
