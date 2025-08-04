@@ -199,7 +199,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kFormantShift,
        NumberParameter(
-           u8"FormantShift"s, 0.0, -2.0, 2.0, u8"semitones"s, 8, u8"For"s,
+           u8"Formant Shift"s, 0.0, -2.0, 2.0, u8"semitones"s, 8, u8"For"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const double value) {
              const auto target_speaker = std::get<int>(
@@ -245,7 +245,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kPitchShift,
        NumberParameter(
-           u8"PitchShift"s, 0.0, -kMaxAbsPitchShift, kMaxAbsPitchShift,
+           u8"Pitch Shift"s, 0.0, -kMaxAbsPitchShift, kMaxAbsPitchShift,
            u8"semitones"s, 48 * 8, u8"Pit"s, parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const double value) {
              // AverageSourcePitch を変更する
@@ -272,7 +272,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kAverageSourcePitch,
        NumberParameter(
-           u8"AverageSourcePitch"s, 52.0, 0.0, 128.0, u8""s, 128 * 8,
+           u8"Average Source Pitch"s, 52.0, 0.0, 128.0, u8""s, 128 * 8,
            u8"SrcPit"s, parameter_flag::kNoFlags,
            [](ControllerCore& controller, const double value) {
              // PitchShift を変更する
@@ -298,13 +298,13 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kLock,
        ListParameter(
-           u8"Lock"s, {u8"AverageSourcePitch"s, u8"PitchShift"s}, 0, u8"Loc"s,
-           parameter_flag::kIsList,
+           u8"Lock"s, {u8"Average Source Pitch"s, u8"Pitch Shift"s}, 0,
+           u8"Loc"s, parameter_flag::kIsList,
            [](ControllerCore&, int) { return ErrorCode::kSuccess; },
            [](ProcessorProxy&, int) { return ErrorCode::kSuccess; })},
       {ParameterID::kInputGain,
        NumberParameter(
-           u8"InputGain"s, 0.0, -60.0, 20.0, u8"dB"s, 0, u8"Gain/In"s,
+           u8"Input Gain"s, 0.0, -60.0, 20.0, u8"dB"s, 0, u8"Gain/In"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
@@ -312,7 +312,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kOutputGain,
        NumberParameter(
-           u8"OutputGain"s, 0.0, -60.0, 20.0, u8"dB"s, 0, u8"Gain/Out"s,
+           u8"Output Gain"s, 0.0, -60.0, 20.0, u8"dB"s, 0, u8"Gain/Out"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
@@ -320,7 +320,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kIntonationIntensity,
        NumberParameter(
-           u8"IntonationIntensity"s, 1.0, -1.0, 3.0, u8""s, 40, u8"Inton"s,
+           u8"Intonation Intensity"s, 1.0, -1.0, 3.0, u8""s, 40, u8"Inton"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
@@ -328,7 +328,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kPitchCorrection,
        NumberParameter(
-           u8"PitchCorrection"s, 0.0, 0.0, 1.0, u8""s, 10, u8"PitCor"s,
+           u8"Pitch Correction"s, 0.0, 0.0, 1.0, u8""s, 10, u8"PitCor"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
@@ -336,31 +336,31 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kPitchCorrectionType,
        ListParameter(
-           u8"PitchCorrectionType"s, {u8"Hard 0"s, u8"Hard 1"s}, 0, u8"CorTyp"s,
-           parameter_flag::kCanAutomate,
+           u8"Pitch Correction Type"s, {u8"Hard 0"s, u8"Hard 1"s}, 0,
+           u8"CorTyp"s, parameter_flag::kCanAutomate,
            [](ControllerCore&, int) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const int value) {
              return vc.GetCore()->SetPitchCorrectionType(value);
            })},
       {ParameterID::kMinSourcePitch,
        NumberParameter(
-           u8"MinSourcePitch"s, 33.125, 0.0, 128.0, u8""s, 128 * 8, u8"MinPit"s,
-           parameter_flag::kCanAutomate,
+           u8"Min Source Pitch"s, 33.125, 0.0, 128.0, u8""s, 128 * 8,
+           u8"MinPit"s, parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetMinSourcePitch(value);
            })},
       {ParameterID::kMaxSourcePitch,
        NumberParameter(
-           u8"MaxSourcePitch"s, 80.875, 0.0, 128.0, u8""s, 128 * 8, u8"MaxPit"s,
-           parameter_flag::kCanAutomate,
+           u8"Max Source Pitch"s, 80.875, 0.0, 128.0, u8""s, 128 * 8,
+           u8"MaxPit"s, parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {
              return vc.GetCore()->SetMaxSourcePitch(value);
            })},
       {ParameterID::kVQNumNeighbors,
        NumberParameter(
-           u8"VQNumNeighbors"s, 0.0, 0.0, 8.0, u8""s, 8, u8"VQNbr"s,
+           u8"VQ Neighbor Count"s, 0.0, 0.0, 8.0, u8""s, 8, u8"VQNbr"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {

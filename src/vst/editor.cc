@@ -52,8 +52,10 @@ namespace BitmapFilter = VSTGUI::BitmapFilter;
 
 Editor::Editor(void* const controller)
     : VSTGUIEditor(controller),
-      font_(new CFontDesc(kNormalFont->getName(), 14)),
-      font_bold_(new CFontDesc(kNormalFont->getName(), 14, kBoldFace)),
+      font_(new CFontDesc("Segoe UI", 14)),
+      font_bold_(new CFontDesc("Segoe UI", 14, kBoldFace)),
+      font_description_(new CFontDesc("Meiryo", 12)),
+      font_version_(new CFontDesc("Segoe UI", 12)),
       tab_view_(),
       portrait_view_(),
       portrait_description_(),
@@ -65,6 +67,8 @@ Editor::Editor(void* const controller)
 Editor::~Editor() {
   font_->forget();
   font_bold_->forget();
+  font_description_->forget();
+  font_version_->forget();
 }
 
 auto PLUGIN_API Editor::open(void* const parent,
@@ -99,7 +103,7 @@ auto PLUGIN_API Editor::open(void* const parent,
       (UTF8String("Ver. ") + FULL_VERSION_STR).data(), nullptr,
       CParamDisplay::kNoFrame);
   version_label->setBackColor(kTransparentCColor);
-  version_label->setFont(VSTGUI::kNormalFont);
+  version_label->setFont(font_version_);
   version_label->setFontColor(kDarkColorScheme.on_surface);
   version_label->setHoriAlign(CHoriTxtAlign::kRightText);
   header->addView(version_label);
@@ -113,20 +117,28 @@ auto PLUGIN_API Editor::open(void* const parent,
   auto context = Context();  // オフセット設定
   BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_1);
   BeginGroup(context, u8"General");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch),
-             2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1, 1.0f,
+             0.1f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1, 1.0f,
+             0.1f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch), 2,
+             1.0f, 0.125f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2,
+             1.0f, 0.125f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2,
+             1.0f, 0.125f);
+  EndGroup(context);
+  BeginGroup(context, u8"Pitch Shift");
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2, 1.0f,
+             0.125f);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
                kTransparentCColor, kDarkColorScheme.on_surface);
   MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
-             1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1);
+             1, 0.5f, 0.1f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1,
+             0.5f, 0.1f);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
                kTransparentCColor, kDarkColorScheme.on_surface);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2);
   EndGroup(context);
   EndColumn(context);
 
@@ -135,8 +147,10 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeFileSelector(context, static_cast<ParamID>(ParameterID::kModel));
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kVoice),
                kDarkColorScheme.primary, kDarkColorScheme.on_primary);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2, 1.0f,
+             0.5f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0,
+             1.0f, 1.0f);
   MakeModelVoiceDescription(context);
   EndGroup(context);
   EndColumn(context);
@@ -674,7 +688,8 @@ void Editor::EndGroup(Context& context) { context.x -= kGroupIndentX; }
 
 // NumberParameter 用
 auto Editor::MakeSlider(Context& context, const ParamID param_id,
-                        const int precision) -> CView* {
+                        const int precision, const float wheel_inc,
+                        const float fine_wheel_inc) -> CView* {
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
   auto* const param =
       static_cast<LinearParameter*>(controller->getParameterObject(param_id));
@@ -694,6 +709,8 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
       VST3::StringConvert::convert(param->getInfo().units), font_, precision);
   slider_control->setMin(param->GetMinPlain());
   slider_control->setMax(param->GetMaxPlain());
+  slider_control->setWheelInc(wheel_inc);
+  slider_control->setFineWheelInc(fine_wheel_inc);
   slider_control->setDefaultValue(
       param->toPlain(param->getInfo().defaultNormalizedValue));
   slider_control->setValue(
@@ -861,7 +878,7 @@ auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
   model_voice_description_ = new ModelVoiceDescription(
       CRect(context.x, context.y, context.column_width - offset_x,
             kWindowHeight - kFooterHeight - kHeaderHeight),
-      VSTGUI::kNormalFont, kElementHeight, kElementMerginY + 4);
+      font_description_, kElementHeight, kElementMerginY + 4);
 
   context.column_elements.push_back(model_voice_description_);
 
