@@ -115,20 +115,26 @@ auto PLUGIN_API Editor::open(void* const parent,
   auto context = Context();  // オフセット設定
   BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_1);
   BeginGroup(context, u8"General");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch),
-             2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1, 1.0f,
+             0.1f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1, 1.0f,
+             0.1f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch), 2,
+             1.0f, 0.125f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2,
+             1.0f, 0.125f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2,
+             1.0f, 0.125f);
   EndGroup(context);
   BeginGroup(context, u8"Pitch Shift");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2, 1.0f,
+             0.125f);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
                kTransparentCColor, kDarkColorScheme.on_surface);
   MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
-             1);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1);
+             1, 0.5f, 0.1f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1,
+             0.5f, 0.1f);
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
                kTransparentCColor, kDarkColorScheme.on_surface);
   EndGroup(context);
@@ -139,8 +145,10 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeFileSelector(context, static_cast<ParamID>(ParameterID::kModel));
   MakeCombobox(context, static_cast<ParamID>(ParameterID::kVoice),
                kDarkColorScheme.primary, kDarkColorScheme.on_primary);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2, 1.0f,
+             0.5f);
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0,
+             1.0f, 1.0f);
   MakeModelVoiceDescription(context);
   EndGroup(context);
   EndColumn(context);
@@ -678,7 +686,8 @@ void Editor::EndGroup(Context& context) { context.x -= kGroupIndentX; }
 
 // NumberParameter 用
 auto Editor::MakeSlider(Context& context, const ParamID param_id,
-                        const int precision) -> CView* {
+                        const int precision, const float wheel_inc,
+                        const float fine_wheel_inc) -> CView* {
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
   auto* const param =
       static_cast<LinearParameter*>(controller->getParameterObject(param_id));
@@ -698,6 +707,8 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
       VST3::StringConvert::convert(param->getInfo().units), font_, precision);
   slider_control->setMin(param->GetMinPlain());
   slider_control->setMax(param->GetMaxPlain());
+  slider_control->setWheelInc(wheel_inc);
+  slider_control->setFineWheelInc(fine_wheel_inc);
   slider_control->setDefaultValue(
       param->toPlain(param->getInfo().defaultNormalizedValue));
   slider_control->setValue(

@@ -24,6 +24,7 @@
 #include "vst3sdk/vstgui4/vstgui/lib/cpoint.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cscrollview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cstring.h"
+#include "vst3sdk/vstgui4/vstgui/lib/events.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguibase.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
@@ -154,6 +155,67 @@ class Slider : public CHorizontalSlider {
 
   ~Slider() override { font_ref_->forget(); }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  void setFineWheelInc(const float fine_wheel_inc) {
+    fine_wheel_inc_ = fine_wheel_inc;
+  }
+
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  [[nodiscard]] auto getFineWheelInc() const -> float {
+    return fine_wheel_inc_;
+  }
+
+  // CSliderBase::onKeyboardEvent がベース
+  void onKeyboardEvent(VSTGUI::KeyboardEvent& event) override {
+    using VSTGUI::VirtualKey;
+    if (event.type != VSTGUI::EventType::KeyDown) {
+      return;
+    }
+    switch (event.virt) {
+      case VirtualKey::Up:
+        [[fallthrough]];
+      case VirtualKey::Right:
+        [[fallthrough]];
+      case VirtualKey::Down:
+        [[fallthrough]];
+      case VirtualKey::Left: {
+        auto distance = 1.0f;
+        const auto is_inverse = isInverseStyle();
+        if ((event.virt == VirtualKey::Down && !is_inverse) ||
+            (event.virt == VirtualKey::Up && is_inverse) ||
+            (event.virt == VirtualKey::Left && !is_inverse) ||
+            (event.virt == VirtualKey::Right && is_inverse)) {
+          distance = -distance;
+        }
+
+        auto plain_value = getValue();
+        if (buttonStateFromEventModifiers(event.modifiers) & kZoomModifier) {
+          plain_value += distance * getFineWheelInc();
+        } else {
+          plain_value += distance * getWheelInc();
+        }
+        setValue(plain_value);
+
+        if (isDirty()) {
+          invalid();
+          beginEdit();
+          valueChanged();
+          endEdit();
+        }
+        event.consumed = true;
+      }
+      case VirtualKey::Escape: {
+        if (isEditing()) {
+          onMouseCancel();
+          event.consumed = true;
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
   void draw(CDrawContext* const context) override {
     CHorizontalSlider::draw(context);
 
@@ -220,6 +282,7 @@ class Slider : public CHorizontalSlider {
   std::string units_;
   CFontRef font_ref_;
   int precision_;
+  float fine_wheel_inc_ = 0.1f;
   bool enabled_ = true;
 };
 

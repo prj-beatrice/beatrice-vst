@@ -79,7 +79,9 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   auto EndColumn(Context&) -> CView*;
   auto BeginGroup(Context&, const std::u8string& name) -> CView*;
   static void EndGroup(Context&);
-  auto MakeSlider(Context&, ParamID param_id, int precision = 1) -> CView*;
+  auto MakeSlider(Context&, ParamID param_id, int precision = 1,
+                  float wheel_inc = 1.0f, float fine_wheel_inc = 0.1f)
+      -> CView*;
   auto MakeCombobox(Context&, ParamID, const CColor&, const CColor&) -> CView*;
   auto MakeFileSelector(Context&, ParamID param_id) -> CView*;
   auto MakePortraitView(Context&) -> CView*;
