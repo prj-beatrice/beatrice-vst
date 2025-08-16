@@ -44,6 +44,7 @@ class ProcessorCore1 : public ProcessorCoreBase {
     Beatrice20b1_DestroyWaveformContext1(waveform_context_);
   }
   [[nodiscard]] auto GetVersion() const -> int override;
+  [[nodiscard]] virtual auto GetLatencySamples() const -> int override;
   auto Process(const float* input, float* output, int n_samples)
       -> ErrorCode override;
   auto ResetContext() -> ErrorCode override;

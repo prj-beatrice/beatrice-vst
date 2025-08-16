@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "beatricelib/beatrice.h"
+#include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
@@ -552,6 +553,17 @@ void Editor::valueChanged(CControl* const pControl) {
     msg->getAttributes()->setBinary("data", file.c_str(), file.size());
     controller->sendMessage(msg);
     msg->release();
+
+    // 遅延の量の変更を DAW に伝える。
+    // TODO(bug):
+    // ファイルが変更されたら必ず遅延の量が変更されると仮定してしまっている。
+    // 加えて、processor で新しいモデルが読み込まれるより早く遅延時間が
+    // 取得される可能性があるので、processor からの通知によってこれが
+    // 実行されるように修正する。
+    if (controller->componentHandler) {
+      controller->componentHandler->restartComponent(
+          Steinberg::Vst::kLatencyChanged);
+    }
   } else {
     assert(false);
   }
