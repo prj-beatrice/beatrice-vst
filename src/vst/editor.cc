@@ -410,7 +410,7 @@ void Editor::SyncModelDescription() {
     }
 
     if (voice_counter > 1) {
-      const auto flags = model_config_->model.VersionInt() <= 1
+      const auto flags = model_config_->model.VersionInt() <= 2
                              ? VSTGUI::CMenuItem::kNoFlags
                              : VSTGUI::CMenuItem::kDisabled;
       voice_combobox->addEntry("Voice Morphing Mode", -1, flags);

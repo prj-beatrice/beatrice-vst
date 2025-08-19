@@ -45,8 +45,13 @@ add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/MT>")
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
-add_compile_options("$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>")
-add_compile_options("$<$<C_COMPILER_ID:MSVC>:/openmp:experimental>")
+find_package(OpenMP REQUIRED)
+if (OpenMP_FOUND)
+    add_compile_options("$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>")
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/openmp:experimental>")
+    add_compile_options("$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>")
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/openmp:experimental>")
+endif()
 
 set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES 0)
 set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES 0)
@@ -68,6 +73,7 @@ smtg_add_vst3plugin(${target}
     src/common/processor_core_1.cc
     src/common/processor_core_2.cc
     src/common/processor_proxy.cc
+    src/common/hungarian_algorithm.cc
     src/vst/controller.cc
     src/vst/editor.cc
     src/vst/factory.cc

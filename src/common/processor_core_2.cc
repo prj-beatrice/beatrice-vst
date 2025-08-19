@@ -5,8 +5,10 @@
 #include <cassert>
 #include <cstring>
 #include <filesystem>
+#include <numeric>
 
 #include "common/error.h"
+// #include "common/hungarian_algorithm.h"
 #include "common/model_config.h"
 
 namespace beatrice::common {
@@ -39,6 +41,63 @@ auto ProcessorCore2::Process(const float* const input, float* const output,
 }
 
 void ProcessorCore2::Process1(const float* const input, float* const output) {
+#if 0
+  // モーフィング の処理
+  {
+    if (!sph_avg_a_.Update()) {
+      sph_avg_a_.GetResult(
+          BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+          additive_speaker_embeddings_.data() +
+              n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+      if (target_speaker_ == n_speakers_) {
+        Beatrice20rc0_SetAdditiveSpeakerEmbedding(
+            embedding_setter_,
+            additive_speaker_embeddings_.data() +
+                n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+            embedding_context_, waveform_context_);
+      }
+    }
+
+    bool update_flag = false;
+    for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
+      if (!sph_avgs_c_[i].Update()) {
+        update_flag = true;
+        sph_avgs_c_[i].GetResult(
+            BEATRICE_20RC0_PHONE_CHANNELS,
+            codebooks_.data() +
+                (n_speakers_ * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
+                    BEATRICE_20RC0_PHONE_CHANNELS);
+      }
+    }
+    if (update_flag && target_speaker_ == n_speakers_) {
+      Beatrice20rc0_SetCodebook(
+          phone_context_,
+          codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                             BEATRICE_20RC0_PHONE_CHANNELS));
+    }
+    update_flag = false;
+    for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
+      if (!sph_avgs_k_[i].Update()) {
+        update_flag = true;
+        sph_avgs_k_[i].GetResult(
+            BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+            key_value_speaker_embeddings_.data() +
+                (n_speakers_ * BEATRICE_20RC0_KV_LENGTH + i) *
+                    BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+      }
+    }
+    if (update_flag && target_speaker_ == n_speakers_) {
+      Beatrice20rc0_RegisterKeyValueSpeakerEmbedding(
+          embedding_setter_,
+          key_value_speaker_embeddings_.data() +
+              n_speakers_ * (BEATRICE_20RC0_KV_LENGTH *
+                             BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS),
+          embedding_context_);
+      key_value_speaker_embedding_set_count_ = 0;
+    }
+  }
+#endif
+
   // Beatrice20rc0_SetKeyValueSpeakerEmbedding は重めの処理なので
   // 4 フレームかけて処理する
   SetKeyValueSpeakerEmbedding();
@@ -211,6 +270,74 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
           key_value_speaker_embeddings_.data())) {
     return static_cast<ErrorCode>(err);
   }
+
+#if 0
+  // codebookについて先頭の話者に合わせて並び替えを行う
+  constexpr size_t length =
+      BEATRICE_20RC0_CODEBOOK_SIZE * BEATRICE_20RC0_PHONE_CHANNELS;
+  auto cost_matrix = std::vector<std::vector<float>>(
+      BEATRICE_20RC0_CODEBOOK_SIZE,
+      std::vector<float>(BEATRICE_20RC0_CODEBOOK_SIZE));
+  for (size_t i = 1; i < n_speakers_; ++i) {
+    for (int64_t j = 0; j < BEATRICE_20RC0_CODEBOOK_SIZE; ++j) {
+      for (size_t k = 0; k < BEATRICE_20RC0_CODEBOOK_SIZE; ++k) {
+        cost_matrix[j][k] = 0.0f;
+        float dot = 0.0f;
+#pragma omp simd
+        for (size_t l = 0; l < BEATRICE_20RC0_PHONE_CHANNELS; ++l) {
+          dot +=
+              codebooks_[0 * length + k * BEATRICE_20RC0_PHONE_CHANNELS + l] *
+              codebooks_[i * length + k * BEATRICE_20RC0_PHONE_CHANNELS + l];
+        }
+        cost_matrix[j][k] = -dot;
+      }
+    }
+    auto assignment = beatrice::common::hungarian_algorithm(cost_matrix);
+    for (size_t j = 0; j < BEATRICE_20RC0_CODEBOOK_SIZE; ++j) {
+      codebooks_[n_speakers_ * length + j] =
+          codebooks_[i * length + assignment[j]];
+    }
+    std::copy_n(&codebooks_[n_speakers_ * length], length,
+                &codebooks_[i * length]);
+  }
+#endif
+  {
+    // モデルマージ用に各種 sph_avgs_ を初期化する
+    sph_avg_a_.Initialize(
+        n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+        additive_speaker_embeddings_.data(), BEATRICE_20RC0_MAX_MORPH_SPEAKERS);
+
+    std::vector<float> codebook_block(n_speakers_ *
+                                      BEATRICE_20RC0_PHONE_CHANNELS);
+    for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
+      for (size_t j = 0; j < n_speakers_; ++j) {
+        std::copy_n(codebooks_.data() + (j * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
+                                            BEATRICE_20RC0_PHONE_CHANNELS,
+                    BEATRICE_20RC0_PHONE_CHANNELS,
+                    codebook_block.data() + j * BEATRICE_20RC0_PHONE_CHANNELS);
+      }
+      sph_avgs_c_[i].Initialize(n_speakers_, BEATRICE_20RC0_PHONE_CHANNELS,
+                                codebook_block.data(),
+                                BEATRICE_20RC0_MAX_MORPH_SPEAKERS);
+    }
+
+    std::vector<float> key_value_block(
+        n_speakers_ * BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+    for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
+      for (size_t j = 0; j < n_speakers_; ++j) {
+        std::copy_n(key_value_speaker_embeddings_.data() +
+                        (j * BEATRICE_20RC0_KV_LENGTH + i) *
+                            BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+                    BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+                    key_value_block.data() +
+                        j * BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+      }
+      sph_avgs_k_[i].Initialize(
+          n_speakers_, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+          key_value_block.data(), BEATRICE_20RC0_MAX_MORPH_SPEAKERS);
+    }
+  }
+
   is_ready_to_set_speaker_ = true;
 
   // 目標話者を 0 に設定する
@@ -304,7 +431,82 @@ auto ProcessorCore2::SetOutputGain(const double new_output_gain) -> ErrorCode {
 auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
                                               double morphing_weight)
     -> ErrorCode {
-  // 未実装
+  if (!is_ready_to_set_speaker_) {
+    return ErrorCode::kModelNotLoaded;
+  }
+  if (target_speaker_id < 0 || target_speaker_id >= kMaxNSpeakers) {
+    return ErrorCode::kSpeakerIDOutOfRange;
+  }
+  speaker_morphing_weights_[target_speaker_id] = morphing_weight;
+
+  /* 非ゼロ weight の個数が設定値を超えないように、大きい方から順番に残す */
+  auto& indices = speaker_morphing_weights_indices_;
+  std::iota(indices.data(), indices.data() + n_speakers_, 0);
+  std::sort(
+      indices.data(), indices.data() + n_speakers_, [this](size_t a, size_t b) {
+        return speaker_morphing_weights_[a] > speaker_morphing_weights_[b];
+      });
+  for (size_t i = 0; i < BEATRICE_20RC0_MAX_MORPH_SPEAKERS; ++i) {
+    speaker_morphing_weights_limited_[indices[i]] =
+        speaker_morphing_weights_[indices[i]];
+  }
+  for (size_t i = BEATRICE_20RC0_MAX_MORPH_SPEAKERS; i < n_speakers_; ++i) {
+    speaker_morphing_weights_[indices[i]] = 0.0;
+  }
+
+  sph_avg_a_.SetWeights(n_speakers_, speaker_morphing_weights_limited_.data());
+  for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
+    if (sph_avg_a_.Update()) break;
+  }
+  sph_avg_a_.GetResult(
+      BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+      additive_speaker_embeddings_.data() +
+          n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+
+  for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
+    sph_avgs_c_[i].SetWeights(n_speakers_,
+                              speaker_morphing_weights_limited_.data());
+    for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
+      if (sph_avgs_c_[i].Update()) break;
+    }
+    sph_avgs_c_[i].GetResult(
+        BEATRICE_20RC0_PHONE_CHANNELS,
+        codebooks_.data() + (n_speakers_ * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
+                                BEATRICE_20RC0_PHONE_CHANNELS);
+  }
+
+  for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
+    sph_avgs_k_[i].SetWeights(n_speakers_,
+                              speaker_morphing_weights_limited_.data());
+    for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
+      if (sph_avgs_k_[i].Update()) break;
+    }
+    sph_avgs_k_[i].GetResult(
+        BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+        key_value_speaker_embeddings_.data() +
+            (n_speakers_ * BEATRICE_20RC0_KV_LENGTH + i) *
+                BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+  }
+
+  if (target_speaker_ == n_speakers_) {
+    Beatrice20rc0_SetCodebook(
+        phone_context_,
+        codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                           BEATRICE_20RC0_PHONE_CHANNELS));
+    Beatrice20rc0_SetAdditiveSpeakerEmbedding(
+        embedding_setter_,
+        additive_speaker_embeddings_.data() +
+            n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+        embedding_context_, waveform_context_);
+    Beatrice20rc0_RegisterKeyValueSpeakerEmbedding(
+        embedding_setter_,
+        key_value_speaker_embeddings_.data() +
+            n_speakers_ * (BEATRICE_20RC0_KV_LENGTH *
+                           BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS),
+        embedding_context_);
+    key_value_speaker_embedding_set_count_ = 0;
+  }
+
   return ErrorCode::kSuccess;
 }
 
