@@ -124,6 +124,7 @@ class ProcessorCore2 : public ProcessorCoreBase {
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_limited_;
   std::array<size_t, kMaxNSpeakers> speaker_morphing_weights_indices_;
+  bool speaker_morphing_weights_updated_ = false;
   SphericalAverage<float> sph_avg_a_;
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
   std::array<SphericalAverage<float>, BEATRICE_20RC0_KV_LENGTH> sph_avgs_k_;
