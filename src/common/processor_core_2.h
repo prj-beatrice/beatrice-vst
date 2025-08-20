@@ -122,11 +122,13 @@ class ProcessorCore2 : public ProcessorCoreBase {
 
   // モデルマージ
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
-  std::array<float, kMaxNSpeakers> speaker_morphing_weights_limited_;
-  std::array<size_t, kMaxNSpeakers> speaker_morphing_weights_indices_;
-  bool speaker_morphing_weights_updated_ = false;
-  SphericalAverage<float> sph_avg_a_;
+  std::array<float, kMaxNSpeakers> speaker_morphing_weights_pruned_;
+  std::array<size_t, kMaxNSpeakers> speaker_morphing_weights_argsort_indices_;
+  bool speaker_morphing_weights_are_updated_ = false;
+#if 0
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
+#endif
+  SphericalAverage<float> sph_avg_a_;
   std::array<SphericalAverage<float>, BEATRICE_20RC0_KV_LENGTH> sph_avgs_k_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
