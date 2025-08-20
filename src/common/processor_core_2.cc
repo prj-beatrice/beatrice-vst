@@ -42,10 +42,26 @@ auto ProcessorCore2::Process(const float* const input, float* const output,
 
 void ProcessorCore2::Process1(const float* const input, float* const output) {
   if (target_speaker_ == n_speakers_) {
-    // モーフィング処理
+// モーフィング処理
+#if 1
+    //  コードブックについては毎フレームランダムな話者ののものを抽選で選ぶ
+    if (speaker_morphing_weights_are_updated_) {
+      speaker_morphing_codebook_lottery_.param(
+          std::discrete_distribution<int>::param_type(
+              speaker_morphing_weights_pruned_.begin(),
+              speaker_morphing_weights_pruned_.end()));
+    }
+    auto idx = speaker_morphing_codebook_lottery_(
+        speaker_morphing_codebook_lottery_engine_);
+    Beatrice20rc0_SetCodebook(
+        phone_context_,
+        codebooks_.data() + idx * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                   BEATRICE_20RC0_PHONE_CHANNELS));
+#endif
     if (speaker_morphing_weights_are_updated_) {
       // 重みの更新があった場合のみ重みを再設定する
       speaker_morphing_weights_are_updated_ = false;
+#if 0
 #if 0
       for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
         sph_avgs_c_[i].SetWeights(n_speakers_,
@@ -77,7 +93,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
           phone_context_,
           codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
                                              BEATRICE_20RC0_PHONE_CHANNELS));
-
+#endif
       sph_avg_a_.SetWeights(n_speakers_,
                             speaker_morphing_weights_pruned_.data());
       for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {

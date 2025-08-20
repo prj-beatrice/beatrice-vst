@@ -5,6 +5,7 @@
 
 #include <array>
 #include <filesystem>
+#include <random>
 #include <vector>
 
 #include "beatricelib/beatrice.h"
@@ -36,7 +37,20 @@ class ProcessorCore2 : public ProcessorCoreBase {
         embedding_context_(Beatrice20rc0_CreateEmbeddingContext()),
         input_gain_context_(sample_rate),
         output_gain_context_(sample_rate),
-        speaker_morphing_weights_() {}
+        speaker_morphing_weights_{0.0f},
+        speaker_morphing_weights_pruned_{0.0f},
+        speaker_morphing_weights_argsort_indices_{0},
+#if 0
+        sph_avgs_c_(),
+#else
+        speaker_morphing_codebook_lottery_engine_(std::random_device{}()),
+        speaker_morphing_codebook_lottery_(
+            speaker_morphing_weights_pruned_.begin(),
+            speaker_morphing_weights_pruned_.end()),
+#endif
+        sph_avg_a_(),
+        sph_avgs_k_() {
+  }
   ~ProcessorCore2() override {
     Beatrice20rc0_DestroyPhoneExtractor(phone_extractor_);
     Beatrice20rc0_DestroyPitchEstimator(pitch_estimator_);
@@ -127,6 +141,9 @@ class ProcessorCore2 : public ProcessorCoreBase {
   bool speaker_morphing_weights_are_updated_ = false;
 #if 0
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
+#else
+  std::mt19937 speaker_morphing_codebook_lottery_engine_;
+  std::discrete_distribution<int> speaker_morphing_codebook_lottery_;
 #endif
   SphericalAverage<float> sph_avg_a_;
   std::array<SphericalAverage<float>, BEATRICE_20RC0_KV_LENGTH> sph_avgs_k_;
