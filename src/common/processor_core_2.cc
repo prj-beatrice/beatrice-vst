@@ -42,27 +42,13 @@ auto ProcessorCore2::Process(const float* const input, float* const output,
 
 void ProcessorCore2::Process1(const float* const input, float* const output) {
   if (target_speaker_ == n_speakers_) {
-// モーフィング処理
+    // モーフィング処理
+
 #if 1
-    //  コードブックについては毎フレームランダムな話者ののものを抽選で選ぶ
+    // codebookについては色々処理の候補があるのでマクロで分岐
     if (speaker_morphing_weights_are_updated_) {
-      speaker_morphing_codebook_lottery_.param(
-          std::discrete_distribution<int>::param_type(
-              speaker_morphing_weights_pruned_.begin(),
-              speaker_morphing_weights_pruned_.end()));
-    }
-    auto idx = speaker_morphing_codebook_lottery_(
-        speaker_morphing_codebook_lottery_engine_);
-    Beatrice20rc0_SetCodebook(
-        phone_context_,
-        codebooks_.data() + idx * (BEATRICE_20RC0_CODEBOOK_SIZE *
-                                   BEATRICE_20RC0_PHONE_CHANNELS));
-#endif
-    if (speaker_morphing_weights_are_updated_) {
-      // 重みの更新があった場合のみ重みを再設定する
-      speaker_morphing_weights_are_updated_ = false;
 #if 0
-#if 0
+      // spherical average を使う場合
       for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
         sph_avgs_c_[i].SetWeights(n_speakers_,
                                   speaker_morphing_weights_pruned_.data());
@@ -79,21 +65,41 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
                 (n_speakers_ * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
                     BEATRICE_20RC0_PHONE_CHANNELS);
       }
-#else
-      // コードブックについては最大重みを持つ話者の情報をそのまま採用する
-      std::copy_n(
-          codebooks_.data() + speaker_morphing_weights_argsort_indices_[0] *
-                                  (BEATRICE_20RC0_CODEBOOK_SIZE *
-                                   BEATRICE_20RC0_PHONE_CHANNELS),
-          (BEATRICE_20RC0_CODEBOOK_SIZE * BEATRICE_20RC0_PHONE_CHANNELS),
-          codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
-                                             BEATRICE_20RC0_PHONE_CHANNELS));
-#endif
       Beatrice20rc0_SetCodebook(
           phone_context_,
           codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
                                              BEATRICE_20RC0_PHONE_CHANNELS));
+#else
+      // 最大重みを持つ話者の情報をそのまま採用する場合
+      // この場合 codebook のサイズは
+      // (n_speaker_+1)ではなくて(n_speaker_)で十分
+      Beatrice20rc0_SetCodebook(
+          phone_context_,
+          codebooks_.data() + speaker_morphing_weights_argsort_indices_[0] *
+                                  (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                   BEATRICE_20RC0_PHONE_CHANNELS));
 #endif
+    }
+#else
+    // 重みを抽選確率として用いて毎フレームランダムな話者ののものを抽選で選ぶ場合
+    // この場合も codebook のサイズは (n_speaker_+1)ではなくて(n_speaker_)で十分
+    if (speaker_morphing_weights_are_updated_) {
+      speaker_morphing_codebook_lottery_.param(
+          std::discrete_distribution<int>::param_type(
+              speaker_morphing_weights_pruned_.begin(),
+              speaker_morphing_weights_pruned_.end()));
+    }
+    auto idx = speaker_morphing_codebook_lottery_(
+        speaker_morphing_codebook_lottery_engine_);
+    Beatrice20rc0_SetCodebook(
+        phone_context_,
+        codebooks_.data() + idx * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                   BEATRICE_20RC0_PHONE_CHANNELS));
+#endif
+    if (speaker_morphing_weights_are_updated_) {
+      // additive_speaker_embeddings と key-value については
+      // 重みの更新があった場合のみ spherical average を計算する
+      speaker_morphing_weights_are_updated_ = false;
       sph_avg_a_.SetWeights(n_speakers_,
                             speaker_morphing_weights_pruned_.data());
       for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
@@ -483,7 +489,7 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
     }
 
     // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
-    // モデル読み込み時に一気に重みが設定されるため処理が重く異音が鳴ったりしたので、
+    // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、
     // フラグだけ立てて直後のProcess1の中で更新することとする。
     speaker_morphing_weights_are_updated_ = true;
   }

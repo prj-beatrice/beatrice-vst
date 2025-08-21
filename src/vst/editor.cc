@@ -231,6 +231,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       // model_voice_description_->SetVoiceDescription(
       //    u8"< Voice Morphing Mode >");
       SyncVoiceMorphingDescription();
+      SyncVoiceMorphingSliders();
       tab_view_->selectTab(1);
     }
   } else if (vst_param_id >=
@@ -244,6 +245,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       SyncVoiceMorphingDescription();
     }
     control->setValue(plain_value);
+    SyncVoiceMorphingSliders();
   } else {
     control->setValue(plain_value);
   }
@@ -425,11 +427,13 @@ void Editor::SyncModelDescription() {
       auto* const label = morphing_labels_[i];
       if (i < voice_counter) {
         slider->setVisible(true);
+        slider->SetEnabled(true);
         label->setVisible(true);
         label->setText(reinterpret_cast<const char*>(
             model_config_->voices[i].name.c_str()));
       } else {
         slider->setVisible(false);
+        slider->SetEnabled(false);
         label->setVisible(false);
         label->setText("");
       }
@@ -459,6 +463,7 @@ void Editor::SyncModelDescription() {
       // model_voice_description_->SetVoiceDescription(u8"< Voice Morphing Mode
       // >");
       SyncVoiceMorphingDescription();
+      SyncVoiceMorphingSliders();
       tab_view_->selectTab(1);
     }
     model_voice_description_->SetModelDescription(
@@ -1000,7 +1005,7 @@ void Editor::SyncVoiceMorphingDescription() {
     if (morphing_labels_[i]->isVisible()) {
       auto control =
           controls_.at(static_cast<int>(ParameterID::kVoiceMorphWeights) + i);
-      if (control->getValue() > 0.0) {
+      if (control->getValue() >= (0.01f - FLT_EPSILON)) {
         str += model_config_->voices[i].name;
         str += u8"\n";
         str += model_config_->voices[i].description;
@@ -1011,6 +1016,52 @@ void Editor::SyncVoiceMorphingDescription() {
     }
   }
   model_voice_description_->SetVoiceDescription(str);
+}
+
+void Editor::SyncVoiceMorphingSliders() {
+  if (model_config_->model.VersionInt() >= 2) {
+    int non_zero_count = 0;
+    for (int i = 0; i < common::kMaxNSpeakers; ++i) {
+      auto* const slider =
+          static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+              static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+      if (!slider->IsEnabled()) {
+        // Disable にされてるスライダーを DAW 側から
+        // コントロールされた場合のケア
+        slider->setValue(0.0f);
+        slider->setDirty();
+        valueChanged(slider);
+      }
+      if (slider->getValue() >= (0.01f - FLT_EPSILON)) {
+        ++non_zero_count;
+      } else {
+        // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
+        // 挙動が見られたためその場合のケア
+        slider->setValue(0.0f);
+        slider->setDirty();
+        valueChanged(slider);
+      }
+    }
+    if (non_zero_count < BEATRICE_20RC0_MAX_MORPH_SPEAKERS) {
+      for (int i = 0; i < common::kMaxNSpeakers; ++i) {
+        auto* const slider =
+            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+                static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+        slider->SetEnabled(true);
+      }
+    } else {
+      for (int i = 0; i < common::kMaxNSpeakers; ++i) {
+        auto* const slider =
+            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+                static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+        if (slider->getValue() < (0.01f - FLT_EPSILON)) {
+          slider->SetEnabled(false);
+        } else {
+          slider->SetEnabled(true);
+        }
+      }
+    }
+  }
 }
 
 }  // namespace beatrice::vst
