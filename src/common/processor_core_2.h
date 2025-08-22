@@ -119,10 +119,10 @@ class ProcessorCore2 : public ProcessorCoreBase {
   Beatrice20rc0_PitchEstimator* pitch_estimator_;
   Beatrice20rc0_WaveformGenerator* waveform_generator_;
   Beatrice20rc0_EmbeddingSetter* embedding_setter_;
-  std::vector<float> codebooks_;
-  std::vector<float> additive_speaker_embeddings_;
-  std::vector<float> formant_shift_embeddings_;
-  std::vector<float> key_value_speaker_embeddings_;
+  AlignedVector<float, 64> codebooks_;
+  AlignedVector<float, 64> additive_speaker_embeddings_;
+  AlignedVector<float, 64> formant_shift_embeddings_;
+  AlignedVector<float, 64> key_value_speaker_embeddings_;
   Gain gain_;
   // 状態
   Beatrice20rc0_PhoneContext1* phone_context_;

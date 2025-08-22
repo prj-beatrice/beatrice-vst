@@ -121,13 +121,9 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
         sph_avgs_k_[i].SetWeights(
             n_speakers_, speaker_morphing_weights_pruned_.data(),
             speaker_morphing_weights_argsort_indices_.data());
-      }
-      for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
         for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
           if (sph_avgs_k_[i].Update()) break;
         }
-      }
-      for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
         sph_avgs_k_[i].GetResult(
             BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
             key_value_speaker_embeddings_.data() +
