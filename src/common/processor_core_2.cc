@@ -46,32 +46,34 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
     // codebookについては色々処理の候補があるのでマクロで分岐
 
 #if 0
-    if (speaker_morphing_state_counter_ == 0) {
-#if 0
+    if (speaker_morphing_state_counter_ < kSphAvgMaxNState) {
       // spherical average を使う場合
-      // 数が多くて計算量が重い
-      for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
-        sph_avgs_c_[i].SetWeights(n_speakers_,
-                                  speaker_morphing_weights_pruned_.data(),
-                                  speaker_morphing_weights_argsort_indices_.data());
-      }
-      for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
+      // 数が多くて計算量が重いので、時分割処理を行う。
+      auto start_idx = BEATRICE_20RC0_KV_LENGTH *
+                       speaker_morphing_state_counter_ / kSphAvgMaxNState;
+      auto end_idx = BEATRICE_20RC0_KV_LENGTH *
+                     (speaker_morphing_state_counter_ + 1) / kSphAvgMaxNState;
+      for (size_t i = start_idx; i < end_idx; ++i) {
+        sph_avgs_c_[i].SetWeights(
+            n_speakers_, speaker_morphing_weights_pruned_.data(),
+            speaker_morphing_weights_argsort_indices_.data());
         for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
           if (sph_avgs_c_[i].Update()) break;
         }
-      }
-      for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
         sph_avgs_c_[i].GetResult(
             BEATRICE_20RC0_PHONE_CHANNELS,
             codebooks_.data() +
                 (n_speakers_ * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
                     BEATRICE_20RC0_PHONE_CHANNELS);
       }
+    } else if (speaker_morphing_state_counter_ == kSphAvgMaxNState) {
       Beatrice20rc0_SetCodebook(
           phone_context_,
           codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
                                              BEATRICE_20RC0_PHONE_CHANNELS));
-#else
+    }
+#elif 0
+    if (speaker_morphing_state_counter_ == 0) {
       // 最大重みを持つ話者の情報をそのまま採用する場合
       // この場合 codebook のサイズは
       // (n_speaker_+1)ではなくて(n_speaker_)で十分
@@ -80,17 +82,14 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
           codebooks_.data() + speaker_morphing_weights_argsort_indices_[0] *
                                   (BEATRICE_20RC0_CODEBOOK_SIZE *
                                    BEATRICE_20RC0_PHONE_CHANNELS));
-#endif
     }
 #else
     // 重みを抽選確率として用いて毎フレームランダムな話者ののものを抽選で選ぶ場合
     // この場合も codebook のサイズは (n_speaker_+1)ではなくて(n_speaker_)で十分
-    if (speaker_morphing_state_counter_ == 0) {
-      speaker_morphing_codebook_lottery_.param(
-          std::discrete_distribution<int>::param_type(
-              speaker_morphing_weights_pruned_.begin(),
-              speaker_morphing_weights_pruned_.end()));
-    }
+    speaker_morphing_codebook_lottery_.param(
+        std::discrete_distribution<int>::param_type(
+            speaker_morphing_weights_pruned_.begin(),
+            speaker_morphing_weights_pruned_.end()));
     auto idx = speaker_morphing_codebook_lottery_(
         speaker_morphing_codebook_lottery_engine_);
     Beatrice20rc0_SetCodebook(
@@ -150,7 +149,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
     }
 
     if (speaker_morphing_state_counter_ <= kSphAvgMaxNState) {
-      speaker_morphing_state_counter_++;
+      ++speaker_morphing_state_counter_;
     }
   }
 
@@ -355,8 +354,7 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
                   codebook_block.data() + j * BEATRICE_20RC0_PHONE_CHANNELS);
     }
     sph_avgs_c_[i].Initialize(n_speakers_, BEATRICE_20RC0_PHONE_CHANNELS,
-                              codebook_block.data(),
-                              kSphAvgMaxNSpeakers);
+                              codebook_block.data(), kSphAvgMaxNSpeakers);
   }
 #endif
 
@@ -504,7 +502,7 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
 
     // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
     // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、
-    // フラグだけ立てて直後のProcess1の中で更新することとする。
+    // フラグだけ立てて次のフレームから更新するようにする。
     speaker_morphing_state_counter_ = 0;
   }
   return ErrorCode::kSuccess;
