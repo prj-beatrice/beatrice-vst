@@ -349,7 +349,8 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
   // additive_speaker_embeddings モーフィング用の sph_avg を初期化する
   sph_avg_a_.Initialize(
       n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-      additive_speaker_embeddings_.data(), BEATRICE_20RC0_MAX_MORPH_SPEAKERS);
+      additive_speaker_embeddings_.data(),
+      std::min(n_speakers_, BEATRICE_20RC0_MAX_MORPH_SPEAKERS));
 
   // key-value モーフィング用に sph_avg を初期化する
   std::vector<float> key_value_block(
@@ -365,7 +366,8 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
     }
     sph_avgs_k_[i].Initialize(
         n_speakers_, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
-        key_value_block.data(), BEATRICE_20RC0_MAX_MORPH_SPEAKERS);
+        key_value_block.data(),
+        std::min(n_speakers_, BEATRICE_20RC0_MAX_MORPH_SPEAKERS));
   }
   speaker_morphing_weights_are_updated_ = false;
 

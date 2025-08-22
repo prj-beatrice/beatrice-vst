@@ -219,12 +219,11 @@ class SphericalAverage {
       std::fill_n(v_.begin(), N_, (T)0.0);
     } else {
       mem_idx_ = 0;
-      gamma_ = 1.0;
+      gamma_ = (T)1.0;
       std::fill_n(s_.begin(), K_ * M_, (T)0.0);
       std::fill_n(t_.begin(), K_ * M_, (T)0.0);
       std::fill_n(r_.begin(), K_, (T)0.0);
       std::fill_n(a_.begin(), K_, (T)0.0);
-      std::fill_n(g_.begin(), M_, (T)0.0);
       UpdateVGD();
     }
   }
@@ -253,9 +252,9 @@ class SphericalAverage {
   }
 
  private:
-  auto Dot(size_t len, const T* x1, const T* x2) -> T {
-    const T* xx1 = std::assume_aligned<64>(x1);
-    const T* xx2 = std::assume_aligned<64>(x2);
+  inline auto Dot(size_t len, const T* x1, const T* x2) -> T {
+    const T* __restrict xx1 = std::assume_aligned<64>(x1);
+    const T* __restrict xx2 = std::assume_aligned<64>(x2);
     T y = (T)0;
     for (size_t l = 0; l < len; l++) {
       y += xx1[l] * xx2[l];
@@ -263,24 +262,24 @@ class SphericalAverage {
     return y;
   }
 
-  auto MulC(size_t len, T a, T* x) -> void {
-    T* xx = std::assume_aligned<64>(x);
+  inline auto MulC(size_t len, T a, T* x) -> void {
+    T* __restrict xx = std::assume_aligned<64>(x);
     for (size_t l = 0; l < len; l++) {
       xx[l] *= a;
     }
   }
 
-  auto AddProductC(size_t len, T a, const T* __restrict x, T* __restrict y)
-      -> void {
-    const T* xx = std::assume_aligned<64>(x);
-    T* yy = std::assume_aligned<64>(y);
+  inline auto AddProductC(size_t len, T a, const T* __restrict x,
+                          T* __restrict y) -> void {
+    const T* __restrict xx = std::assume_aligned<64>(x);
+    T* __restrict yy = std::assume_aligned<64>(y);
     for (size_t l = 0; l < len; l++) {
       yy[l] += a * xx[l];
     }
   }
 
-  auto Sum(size_t len, const T* __restrict x) -> T {
-    const T* xx = std::assume_aligned<64>(x);
+  inline auto Sum(size_t len, const T* __restrict x) -> T {
+    const T* __restrict xx = std::assume_aligned<64>(x);
     T y = 0;
     for (size_t l = 0; l < len; l++) {
       y += xx[l];
@@ -289,7 +288,7 @@ class SphericalAverage {
   }
 
   auto NormalizeVector(size_t len, T* x) -> bool {
-    const T* xx = std::assume_aligned<64>(x);
+    const T* __restrict xx = std::assume_aligned<64>(x);
     T norm = sqrt(Dot(len, x, x));
     if (norm > 0.0) {
       T scale_factor = ((T)1.0) / norm;
