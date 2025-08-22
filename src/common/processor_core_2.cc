@@ -43,12 +43,13 @@ auto ProcessorCore2::Process(const float* const input, float* const output,
 void ProcessorCore2::Process1(const float* const input, float* const output) {
   if (target_speaker_ == n_speakers_) {
     // モーフィング処理
+    // codebookについては色々処理の候補があるのでマクロで分岐
 
 #if 0
-    // codebookについては色々処理の候補があるのでマクロで分岐
-    if (speaker_morphing_weights_are_updated_) {
+    if (speaker_morphing_state_counter_ == 0) {
 #if 0
       // spherical average を使う場合
+      // 数が多くて計算量が重い
       for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
         sph_avgs_c_[i].SetWeights(n_speakers_,
                                   speaker_morphing_weights_pruned_.data(),
@@ -84,7 +85,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
 #else
     // 重みを抽選確率として用いて毎フレームランダムな話者ののものを抽選で選ぶ場合
     // この場合も codebook のサイズは (n_speaker_+1)ではなくて(n_speaker_)で十分
-    if (speaker_morphing_weights_are_updated_) {
+    if (speaker_morphing_state_counter_ == 0) {
       speaker_morphing_codebook_lottery_.param(
           std::discrete_distribution<int>::param_type(
               speaker_morphing_weights_pruned_.begin(),
@@ -97,10 +98,10 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
         codebooks_.data() + idx * (BEATRICE_20RC0_CODEBOOK_SIZE *
                                    BEATRICE_20RC0_PHONE_CHANNELS));
 #endif
-    if (speaker_morphing_weights_are_updated_) {
-      // additive_speaker_embeddings と key-value については
-      // 重みの更新があった場合のみ spherical average を計算する
-      speaker_morphing_weights_are_updated_ = false;
+
+    if (speaker_morphing_state_counter_ == 0) {
+      // additive_speaker_embeddings については
+      // 重みの更新があった次のフレームで一気に更新する
       sph_avg_a_.SetWeights(n_speakers_,
                             speaker_morphing_weights_pruned_.data(),
                             speaker_morphing_weights_argsort_indices_.data());
@@ -116,8 +117,16 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
           additive_speaker_embeddings_.data() +
               n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
           embedding_context_, waveform_context_);
+    }
 
-      for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
+    if (speaker_morphing_state_counter_ < kSphAvgMaxNState) {
+      // key_value_speaker_embeddings_ の spherical average については
+      // 重めの処理なので数フレームに分けて計算する
+      auto start_idx = BEATRICE_20RC0_KV_LENGTH *
+                       speaker_morphing_state_counter_ / kSphAvgMaxNState;
+      auto end_idx = BEATRICE_20RC0_KV_LENGTH *
+                     (speaker_morphing_state_counter_ + 1) / kSphAvgMaxNState;
+      for (size_t i = start_idx; i < end_idx; ++i) {
         sph_avgs_k_[i].SetWeights(
             n_speakers_, speaker_morphing_weights_pruned_.data(),
             speaker_morphing_weights_argsort_indices_.data());
@@ -130,6 +139,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
                 (n_speakers_ * BEATRICE_20RC0_KV_LENGTH + i) *
                     BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
       }
+    } else if (speaker_morphing_state_counter_ == kSphAvgMaxNState) {
       Beatrice20rc0_RegisterKeyValueSpeakerEmbedding(
           embedding_setter_,
           key_value_speaker_embeddings_.data() +
@@ -137,6 +147,10 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
                              BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS),
           embedding_context_);
       key_value_speaker_embedding_set_count_ = 0;
+    }
+
+    if (speaker_morphing_state_counter_ <= kSphAvgMaxNState) {
+      speaker_morphing_state_counter_++;
     }
   }
 
@@ -368,7 +382,7 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
         n_speakers_, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
         key_value_block.data(), std::min(n_speakers_, kSphAvgMaxNSpeakers));
   }
-  speaker_morphing_weights_are_updated_ = false;
+  speaker_morphing_state_counter_ = INT_MAX;
 
   is_ready_to_set_speaker_ = true;
 
@@ -491,7 +505,7 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
     // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
     // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、
     // フラグだけ立てて直後のProcess1の中で更新することとする。
-    speaker_morphing_weights_are_updated_ = true;
+    speaker_morphing_state_counter_ = 0;
   }
   return ErrorCode::kSuccess;
 }

@@ -146,6 +146,7 @@ class SphericalAverage {
     }
 
     assert(N_lim_ <= num_feature);
+    assert(M_ % 16 == 0);  // M must be a multiple of 16
 
     N_ = 0;
     M_ = num_feature;
@@ -171,15 +172,15 @@ class SphericalAverage {
   }
 
   auto SetWeights(size_t num_point, const T* weights,
-                  const int* indices = nullptr) -> void {
+                  const int* argsorted_indices = nullptr) -> void {
     converged_ = false;
 
     std::fill_n(w_.begin(), N_lim_, (T)0.0);
     std::fill_n(v_.begin(), N_lim_, (T)0.0);
 
-    if (indices) {
+    if (argsorted_indices) {
       N_ = std::min(num_point, N_lim_);
-      std::copy_n(indices, N_, indices_.begin());
+      std::copy_n(argsorted_indices, N_, indices_.begin());
       for (size_t i = 0; i < N_; i++) {
         w_[i] = weights[indices_[i]];
         if (w_[i] == (T)0.0) {
@@ -347,9 +348,7 @@ class SphericalAverage {
       T inv_sinc_th =
           ((T)1.0) / (Sinc(theta) + std::numeric_limits<T>::epsilon());
       sum_w_c_s += w_[n] * cos_th * inv_sinc_th;
-
       v_[n] = w_[n] * inv_sinc_th;
-
       T a_n = -((T)2.0) * w_[n] * theta / sqrt(((T)1.0) - cos_th * cos_th);
       AddProductC(M_, a_n, &p_[indices_[n] * M_], g_.data());
     }

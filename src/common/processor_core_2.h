@@ -24,7 +24,6 @@ namespace beatrice::common {
 class ProcessorCore2 : public ProcessorCoreBase {
  public:
   static constexpr int kSphAvgMaxNSpeakers = 8;
-  static constexpr int kSphAvgMaxNUpdates = 4;
 
   explicit ProcessorCore2(const double sample_rate)
       : ProcessorCoreBase(),
@@ -93,6 +92,9 @@ class ProcessorCore2 : public ProcessorCoreBase {
       -> ErrorCode override;
 
  private:
+  static constexpr int kSphAvgMaxNUpdates = 4;
+  static constexpr int kSphAvgMaxNState = 4;
+
   class ConvertWithModelBlockSize {
    public:
     ConvertWithModelBlockSize() = default;
@@ -141,7 +143,7 @@ class ProcessorCore2 : public ProcessorCoreBase {
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_pruned_;
   std::array<int, kMaxNSpeakers> speaker_morphing_weights_argsort_indices_;
-  bool speaker_morphing_weights_are_updated_ = false;
+  int speaker_morphing_state_counter_ = INT_MAX;
 #if 0
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
 #elif 1
