@@ -1036,7 +1036,8 @@ void Editor::SyncVoiceMorphingSliders() {
         ++non_zero_count;
       } else {
         // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
-        // 挙動が見られたためその場合のケア
+        // 挙動が見られたため、その場合のケア
+        // 閾値はスライダーの段階依存なので、スライダーの段階に応じた適切な値を設定する
         slider->setValue(0.0f);
         slider->setDirty();
         valueChanged(slider);
@@ -1054,10 +1055,12 @@ void Editor::SyncVoiceMorphingSliders() {
         auto* const slider =
             static_cast<Slider*>(controls_.at(static_cast<ParamID>(
                 static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-        if (slider->getValue() < (0.01f - FLT_EPSILON)) {
-          slider->SetEnabled(false);
-        } else {
+        // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
+        // それ以上非ゼロの重みが増えないようにする
+        if (slider->getValue() >= (0.01f - FLT_EPSILON)) {
           slider->SetEnabled(true);
+        } else {
+          slider->SetEnabled(false);
         }
       }
     }

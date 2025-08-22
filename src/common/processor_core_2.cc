@@ -44,14 +44,15 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
   if (target_speaker_ == n_speakers_) {
     // モーフィング処理
 
-#if 1
+#if 0
     // codebookについては色々処理の候補があるのでマクロで分岐
     if (speaker_morphing_weights_are_updated_) {
 #if 0
       // spherical average を使う場合
       for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
         sph_avgs_c_[i].SetWeights(n_speakers_,
-                                  speaker_morphing_weights_pruned_.data());
+                                  speaker_morphing_weights_pruned_.data(),
+                                  speaker_morphing_weights_argsort_indices_.data());
       }
       for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
         for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
@@ -101,7 +102,8 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
       // 重みの更新があった場合のみ spherical average を計算する
       speaker_morphing_weights_are_updated_ = false;
       sph_avg_a_.SetWeights(n_speakers_,
-                            speaker_morphing_weights_pruned_.data());
+                            speaker_morphing_weights_pruned_.data(),
+                            speaker_morphing_weights_argsort_indices_.data());
       for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
         if (sph_avg_a_.Update()) break;
       }
@@ -116,8 +118,9 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
           embedding_context_, waveform_context_);
 
       for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
-        sph_avgs_k_[i].SetWeights(n_speakers_,
-                                  speaker_morphing_weights_pruned_.data());
+        sph_avgs_k_[i].SetWeights(
+            n_speakers_, speaker_morphing_weights_pruned_.data(),
+            speaker_morphing_weights_argsort_indices_.data());
       }
       for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
         for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {

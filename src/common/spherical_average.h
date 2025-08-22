@@ -173,27 +173,37 @@ class SphericalAverage {
     }
   }
 
-  auto SetWeights(size_t num_point, const T* weights) -> void {
+  auto SetWeights(size_t num_point, const T* weights,
+                  const int* indices = nullptr) -> void {
     converged_ = false;
 
-    N_ = 0;
     std::fill_n(w_.begin(), N_lim_, (T)0.0);
     std::fill_n(v_.begin(), N_lim_, (T)0.0);
     std::fill_n(p_.begin(), N_lim_ * M_, (T)0.0);
 
-    for (size_t i = 0; i < num_point; i++) {
-      if (weights[i] > (T)0.0) {
-        indices_[N_] = i;
-        w_[N_] = weights[i];
-        std::copy_n(&p_all_[i * M_], M_, &p_[N_ * M_]);
-        N_++;
-        if (N_ >= N_lim_) {
-          break;
+    if (indices) {
+      N_ = std::min(num_point, N_lim_);
+      std::copy_n(indices, N_, indices_.begin());
+      std::copy_n(weights, N_, w_.begin());
+      for (size_t i = 0; i < N_; i++) {
+        std::copy_n(&p_all_[indices_[i] * M_], M_, &p_[i * M_]);
+      }
+    } else {
+      N_ = 0;
+      for (size_t i = 0; i < num_point; i++) {
+        if (weights[i] > (T)0.0) {
+          indices_[N_] = i;
+          w_[N_] = weights[i];
+          std::copy_n(&p_all_[i * M_], M_, &p_[N_ * M_]);
+          N_++;
+          if (N_ >= N_lim_) {
+            break;
+          }
         }
       }
     }
 
-    if (NormalizeWeight(N_, w_.data())) {
+    if (N_ > 0 && NormalizeWeight(N_, w_.data())) {
       std::fill_n(q_.data(), M_, (T)0.0);
       for (size_t n = 0; n < N_; n++) {
         AddProductC(M_, w_[n], &p_[n * M_], q_.data());
