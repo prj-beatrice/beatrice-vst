@@ -23,6 +23,9 @@ namespace beatrice::common {
 // 2.0.0-rc.0 用の信号処理クラス
 class ProcessorCore2 : public ProcessorCoreBase {
  public:
+  static constexpr int kSphAvgMaxNSpeakers = 8;
+  static constexpr int kSphAvgMaxNUpdates = 4;
+
   explicit ProcessorCore2(const double sample_rate)
       : ProcessorCoreBase(),
         any_freq_in_out_(sample_rate),

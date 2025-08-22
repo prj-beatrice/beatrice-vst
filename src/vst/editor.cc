@@ -24,6 +24,7 @@
 // Beatrice
 #include "common/error.h"
 #include "common/parameter_schema.h"
+#include "common/processor_core_2.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
 #include "vst/parameter.h"
@@ -1043,7 +1044,7 @@ void Editor::SyncVoiceMorphingSliders() {
         valueChanged(slider);
       }
     }
-    if (non_zero_count < BEATRICE_20RC0_MAX_MORPH_SPEAKERS) {
+    if (non_zero_count < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
       for (int i = 0; i < common::kMaxNSpeakers; ++i) {
         auto* const slider =
             static_cast<Slider*>(controls_.at(static_cast<ParamID>(

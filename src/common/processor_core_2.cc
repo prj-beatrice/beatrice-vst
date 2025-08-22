@@ -55,7 +55,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
                                   speaker_morphing_weights_argsort_indices_.data());
       }
       for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
-        for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
+        for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
           if (sph_avgs_c_[i].Update()) break;
         }
       }
@@ -104,7 +104,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
       sph_avg_a_.SetWeights(n_speakers_,
                             speaker_morphing_weights_pruned_.data(),
                             speaker_morphing_weights_argsort_indices_.data());
-      for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
+      for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
         if (sph_avg_a_.Update()) break;
       }
       sph_avg_a_.GetResult(
@@ -121,7 +121,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
         sph_avgs_k_[i].SetWeights(
             n_speakers_, speaker_morphing_weights_pruned_.data(),
             speaker_morphing_weights_argsort_indices_.data());
-        for (size_t j = 0; j < BEATRICE_20RC0_MAX_MORPH_UPDATES; ++j) {
+        for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
           if (sph_avgs_k_[i].Update()) break;
         }
         sph_avgs_k_[i].GetResult(
@@ -342,15 +342,15 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
     }
     sph_avgs_c_[i].Initialize(n_speakers_, BEATRICE_20RC0_PHONE_CHANNELS,
                               codebook_block.data(),
-                              BEATRICE_20RC0_MAX_MORPH_SPEAKERS);
+                              kSphAvgMaxNSpeakers);
   }
 #endif
 
   // additive_speaker_embeddings モーフィング用の sph_avg を初期化する
-  sph_avg_a_.Initialize(
-      n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-      additive_speaker_embeddings_.data(),
-      std::min(n_speakers_, BEATRICE_20RC0_MAX_MORPH_SPEAKERS));
+  sph_avg_a_.Initialize(n_speakers_,
+                        BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+                        additive_speaker_embeddings_.data(),
+                        std::min(n_speakers_, kSphAvgMaxNSpeakers));
 
   // key-value モーフィング用に sph_avg を初期化する
   std::vector<float> key_value_block(
@@ -366,8 +366,7 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
     }
     sph_avgs_k_[i].Initialize(
         n_speakers_, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
-        key_value_block.data(),
-        std::min(n_speakers_, BEATRICE_20RC0_MAX_MORPH_SPEAKERS));
+        key_value_block.data(), std::min(n_speakers_, kSphAvgMaxNSpeakers));
   }
   speaker_morphing_weights_are_updated_ = false;
 
@@ -481,11 +480,11 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
                 return speaker_morphing_weights_[a] >
                        speaker_morphing_weights_[b];
               });
-    for (size_t i = 0; i < BEATRICE_20RC0_MAX_MORPH_SPEAKERS; ++i) {
+    for (size_t i = 0; i < kSphAvgMaxNSpeakers; ++i) {
       speaker_morphing_weights_pruned_[indices[i]] =
           speaker_morphing_weights_[indices[i]];
     }
-    for (size_t i = BEATRICE_20RC0_MAX_MORPH_SPEAKERS; i < n_speakers_; ++i) {
+    for (size_t i = kSphAvgMaxNSpeakers; i < n_speakers_; ++i) {
       speaker_morphing_weights_pruned_[indices[i]] = 0.0;
     }
 
