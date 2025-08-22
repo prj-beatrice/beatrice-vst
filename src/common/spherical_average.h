@@ -109,7 +109,7 @@ class SphericalAverage {
 
   SphericalAverage(size_t num_point_all, size_t num_feature,
                    const T* unnormalized_vectors, size_t num_point_limit = 0,
-                   size_t num_memory = 4)
+                   size_t num_memory = 2)
       : N_all_(num_point_all),
         N_lim_(0),
         N_(0),
@@ -139,7 +139,7 @@ class SphericalAverage {
 
   auto Initialize(size_t num_point_all, size_t num_feature,
                   const T* unnormalized_vectors, size_t num_point_limit = 0,
-                  size_t num_memory = 4) -> void {
+                  size_t num_memory = 2) -> void {
     N_all_ = num_point_all;
     if (num_point_limit == 0 || num_point_limit > num_point_all) {
       N_lim_ = num_point_all;
@@ -257,7 +257,6 @@ class SphericalAverage {
     const T* xx1 = std::assume_aligned<64>(x1);
     const T* xx2 = std::assume_aligned<64>(x2);
     T y = (T)0;
-#pragma omp simd
     for (size_t l = 0; l < len; l++) {
       y += xx1[l] * xx2[l];
     }
@@ -266,7 +265,6 @@ class SphericalAverage {
 
   auto MulC(size_t len, T a, T* x) -> void {
     T* xx = std::assume_aligned<64>(x);
-#pragma omp simd
     for (size_t l = 0; l < len; l++) {
       xx[l] *= a;
     }
@@ -276,7 +274,6 @@ class SphericalAverage {
       -> void {
     const T* xx = std::assume_aligned<64>(x);
     T* yy = std::assume_aligned<64>(y);
-#pragma omp simd
     for (size_t l = 0; l < len; l++) {
       yy[l] += a * xx[l];
     }
@@ -285,7 +282,6 @@ class SphericalAverage {
   auto Sum(size_t len, const T* __restrict x) -> T {
     const T* xx = std::assume_aligned<64>(x);
     T y = 0;
-#pragma omp simd
     for (size_t l = 0; l < len; l++) {
       y += xx[l];
     }
@@ -388,7 +384,6 @@ class SphericalAverage {
 
     T* __restrict tt = std::assume_aligned<64>(&t_[mem_idx_ * M_]);
     const T* __restrict gg = std::assume_aligned<64>(g_.data());
-#pragma omp simd
     for (size_t m = 0; m < M_; m++) {
       tt[m] = gg[m] - tt[m];
     }
@@ -400,14 +395,12 @@ class SphericalAverage {
 
     T* __restrict qq = std::assume_aligned<64>(q_.data());
     const T* __restrict dd = std::assume_aligned<64>(d_.data());
-#pragma omp simd
     for (size_t m = 0; m < M_; m++) {
       qq[m] -= dd[m];
     }
     NormalizeVector(M_, q_.data());
 
     T* __restrict ss = std::assume_aligned<64>(&s_[mem_idx_ * M_]);
-#pragma omp simd
     for (size_t m = 0; m < M_; m++) {
       ss[m] = qq[m] - ss[m];
     }
