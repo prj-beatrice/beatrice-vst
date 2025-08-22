@@ -94,7 +94,6 @@ class SphericalAverage {
         indices_(),
         w_(),
         p_(),
-        p_all_(),
         p_raw_(),
         q_(),
         v_(),
@@ -119,7 +118,6 @@ class SphericalAverage {
         indices_(),
         w_(),
         p_(),
-        p_all_(),
         p_raw_(),
         q_(),
         v_(),
@@ -154,8 +152,7 @@ class SphericalAverage {
     K_ = num_memory;
     indices_.resize(N_lim_, 0);          // size = N_lim_
     w_.resize(N_lim_, (T)0.0);           // size = N_lim_
-    p_.resize(N_lim_ * M_, (T)0.0);      // size = N_lim_ * M
-    p_all_.resize(N_all_ * M_, (T)0.0);  // size = N_all_ * M
+    p_.resize(N_all_ * M_, (T)0.0);      // size = N_all_ * M
     p_raw_.resize(N_all_ * M_, (T)0.0);  // size = N_all_ * M
     q_.resize(M_, (T)0.0);               // size = M
     v_.resize(N_lim_, (T)0.0);           // size = N_lim_
@@ -167,9 +164,9 @@ class SphericalAverage {
     a_.resize(K_, (T)0.0);               // size = K
 
     std::copy_n(unnormalized_vectors, N_all_ * M_, p_raw_.begin());
-    std::copy_n(unnormalized_vectors, N_all_ * M_, p_all_.begin());
+    std::copy_n(unnormalized_vectors, N_all_ * M_, p_.begin());
     for (size_t n = 0; n < N_all_; n++) {
-      NormalizeVector(M_, &p_all_[n * M_]);
+      NormalizeVector(M_, &p_[n * M_]);
     }
   }
 
@@ -179,14 +176,16 @@ class SphericalAverage {
 
     std::fill_n(w_.begin(), N_lim_, (T)0.0);
     std::fill_n(v_.begin(), N_lim_, (T)0.0);
-    std::fill_n(p_.begin(), N_lim_ * M_, (T)0.0);
 
     if (indices) {
       N_ = std::min(num_point, N_lim_);
       std::copy_n(indices, N_, indices_.begin());
       for (size_t i = 0; i < N_; i++) {
         w_[i] = weights[indices_[i]];
-        std::copy_n(&p_all_[indices_[i] * M_], M_, &p_[i * M_]);
+        if (w_[i] == (T)0.0) {
+          N_ = i;
+          break;
+        }
       }
     } else {
       N_ = 0;
@@ -194,7 +193,6 @@ class SphericalAverage {
         if (weights[i] > (T)0.0) {
           indices_[N_] = i;
           w_[N_] = weights[i];
-          std::copy_n(&p_all_[i * M_], M_, &p_[N_ * M_]);
           N_++;
           if (N_ >= N_lim_) {
             break;
@@ -206,7 +204,7 @@ class SphericalAverage {
     if (N_ > 0 && NormalizeWeight(N_, w_.data())) {
       std::fill_n(q_.data(), M_, (T)0.0);
       for (size_t n = 0; n < N_; n++) {
-        AddProductC(M_, w_[n], &p_[n * M_], q_.data());
+        AddProductC(M_, w_[n], &p_[indices_[n] * M_], q_.data());
       }
       if (!NormalizeVector(M_, q_.data())) {
         converged_ = true;
@@ -344,7 +342,7 @@ class SphericalAverage {
     std::fill_n(g_.begin(), M_, (T)0.0);
 
     for (size_t n = 0; n < N_; n++) {
-      T cos_th = Dot(M_, &p_[n * M_], q_.data());
+      T cos_th = Dot(M_, &p_[indices_[n] * M_], q_.data());
       T theta = acos(cos_th);
       T inv_sinc_th =
           ((T)1.0) / (Sinc(theta) + std::numeric_limits<T>::epsilon());
@@ -353,7 +351,7 @@ class SphericalAverage {
       v_[n] = w_[n] * inv_sinc_th;
 
       T a_n = -((T)2.0) * w_[n] * theta / sqrt(((T)1.0) - cos_th * cos_th);
-      AddProductC(M_, a_n, &p_[n * M_], g_.data());
+      AddProductC(M_, a_n, &p_[indices_[n] * M_], g_.data());
     }
 
     T inv_sum_w_c_s =
@@ -426,8 +424,7 @@ class SphericalAverage {
   // vectors in original space
   std::vector<size_t> indices_;  // size = N_lim
   AlignedVector<T, 64> w_;       // size = N_lim
-  AlignedVector<T, 64> p_;       // size = N_lim * M
-  AlignedVector<T, 64> p_all_;   // size = N_all * M
+  AlignedVector<T, 64> p_;       // size = N_all * M
   AlignedVector<T, 64> p_raw_;   // size = N_all * M
   AlignedVector<T, 64> q_;       // size = M
   AlignedVector<T, 64> v_;       // size = N_lim
