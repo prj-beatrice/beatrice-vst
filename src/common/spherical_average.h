@@ -184,8 +184,8 @@ class SphericalAverage {
     if (indices) {
       N_ = std::min(num_point, N_lim_);
       std::copy_n(indices, N_, indices_.begin());
-      std::copy_n(weights, N_, w_.begin());
       for (size_t i = 0; i < N_; i++) {
+        w_[i] = weights[indices_[i]];
         std::copy_n(&p_all_[indices_[i] * M_], M_, &p_[i * M_]);
       }
     } else {
