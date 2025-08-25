@@ -1022,6 +1022,12 @@ void Editor::SyncVoiceMorphingDescription() {
 void Editor::SyncVoiceMorphingSliders() {
   if (model_config_->model.VersionInt() >= 2) {
     int non_zero_count = 0;
+    auto f_set_zero = [this](Slider* slider) {
+      slider->setValue(0.0f);
+      slider->setDirty();
+      valueChanged(slider);
+    };
+
     for (int i = 0; i < common::kMaxNSpeakers; ++i) {
       auto* const slider =
           static_cast<Slider*>(controls_.at(static_cast<ParamID>(
@@ -1029,22 +1035,21 @@ void Editor::SyncVoiceMorphingSliders() {
       if (!slider->IsEnabled()) {
         // Disable にされてるスライダーを DAW 側から
         // コントロールされた場合のケア
-        slider->setValue(0.0f);
-        slider->setDirty();
-        valueChanged(slider);
+        f_set_zero(slider);
       }
+
+      // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
+      // 挙動が見られたため、その場合のケア
+      // 閾値はスライダーの段階依存なので、スライダーの段階に応じた適切な値を設定する
       if (slider->getValue() >= (0.01f - FLT_EPSILON)) {
         ++non_zero_count;
       } else {
-        // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
-        // 挙動が見られたため、その場合のケア
-        // 閾値はスライダーの段階依存なので、スライダーの段階に応じた適切な値を設定する
-        slider->setValue(0.0f);
-        slider->setDirty();
-        valueChanged(slider);
+        f_set_zero(slider);
       }
     }
+
     if (non_zero_count < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
+      // 非ゼロの重みの数が上限を下回っていた場合はすべてのスライダーを有効化する
       for (int i = 0; i < common::kMaxNSpeakers; ++i) {
         auto* const slider =
             static_cast<Slider*>(controls_.at(static_cast<ParamID>(
@@ -1052,14 +1057,21 @@ void Editor::SyncVoiceMorphingSliders() {
         slider->SetEnabled(true);
       }
     } else {
+      // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
+      // それ以上非ゼロの重みが増えないようにする
+      // また、上限を超えていた分については、それ以降の重みを強制的にゼロにする
+      int counter = 0;
       for (int i = 0; i < common::kMaxNSpeakers; ++i) {
         auto* const slider =
             static_cast<Slider*>(controls_.at(static_cast<ParamID>(
                 static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-        // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
-        // それ以上非ゼロの重みが増えないようにする
         if (slider->getValue() >= (0.01f - FLT_EPSILON)) {
-          slider->SetEnabled(true);
+          if (counter++ < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
+            slider->SetEnabled(true);
+          } else {
+            f_set_zero(slider);
+            slider->SetEnabled(false);
+          }
         } else {
           slider->SetEnabled(false);
         }
