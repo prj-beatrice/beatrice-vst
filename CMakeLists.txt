@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(major_version 2)
 set(minor_version 0)
 set(patch_version 0)
-set(prerelease_version "-beta.4")
+set(prerelease_version "-rc.0")
 execute_process(
     COMMAND git rev-parse --short HEAD
     OUTPUT_VARIABLE GIT_HASH
@@ -121,7 +121,7 @@ add_dependencies(distribution ${target})
 if(NOT BEATRICE_DEV_VERSION)
     set(PARAPHERNALIA_DIR ${DISTRIBUTION_DIR}/beatrice_paraphernalia_jvs)
     file(MAKE_DIRECTORY ${PARAPHERNALIA_DIR})
-    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_149_03000000")
+    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_156_03000000")
     set(PARAPHERNALIA_FILES
         beatrice_paraphernalia_jvs.toml
         phone_extractor.bin

@@ -897,7 +897,7 @@ auto Editor::MakePortraitDescription(Context& context) -> CView* {
   auto* const description = new CMultiLineTextLabel(
       CRect(context.x, context.y, context.column_width - offset_x,
             kWindowHeight - kFooterHeight));
-  description->setFont(font_);
+  description->setFont(font_description_);
   description->setFontColor(kDarkColorScheme.on_surface);
   description->setBackColor(kTransparentCColor);
   description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
