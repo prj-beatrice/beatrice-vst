@@ -150,8 +150,12 @@ class ProcessorCore2 : public ProcessorCoreBase {
   std::mt19937 speaker_morphing_codebook_lottery_engine_;
   std::discrete_distribution<int> speaker_morphing_codebook_lottery_;
 #endif
-  SphericalAverage<float> sph_avg_a_;
-  std::array<SphericalAverage<float>, BEATRICE_20RC0_KV_LENGTH> sph_avgs_k_;
+  SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS>
+      sph_avg_a_;
+  std::array<
+      SphericalAverage<float, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS>,
+      BEATRICE_20RC0_KV_LENGTH>
+      sph_avgs_k_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);

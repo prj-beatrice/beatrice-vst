@@ -4,6 +4,8 @@
 #define BEATRICE_COMMON_SPHERICAL_AVERAGE_H_
 
 #define _USE_MATH_DEFINES
+#include <immintrin.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -81,14 +83,13 @@ bool operator!=(const AlignedAllocator<T, N>& lhs,
 template <typename T, std::size_t N>
 using AlignedVector = std::vector<T, AlignedAllocator<T, N>>;
 
-template <typename T>
+template <typename T, std::size_t M>
 class SphericalAverage {
  public:
   SphericalAverage()
       : N_all_(0),
         N_lim_(0),
         N_(0),
-        M_(0),
         K_(0),
         converged_(true),
         indices_(),
@@ -112,7 +113,6 @@ class SphericalAverage {
       : N_all_(num_point_all),
         N_lim_(0),
         N_(0),
-        M_(num_feature),
         K_(num_memory),
         converged_(true),
         indices_(),
@@ -146,28 +146,28 @@ class SphericalAverage {
     }
 
     assert(N_lim_ <= num_feature);
-    assert(M_ % 16 == 0);  // M must be a multiple of 16
+    assert(M % (64 / sizeof(T)) == 0);  // M must be a multiple of 64/sizeof(T)
+    assert(num_feature == M);           // num_feature must be equal to M
 
     N_ = 0;
-    M_ = num_feature;
     K_ = num_memory;
-    indices_.resize(N_lim_, 0);          // size = N_lim_
-    w_.resize(N_lim_, (T)0.0);           // size = N_lim_
-    p_.resize(N_all_ * M_, (T)0.0);      // size = N_all_ * M
-    p_raw_.resize(N_all_ * M_, (T)0.0);  // size = N_all_ * M
-    q_.resize(M_, (T)0.0);               // size = M
-    v_.resize(N_lim_, (T)0.0);           // size = N_lim_
-    g_.resize(M_, (T)0.0);               // size = M
-    d_.resize(M_, (T)0.0);               // size = M
-    s_.resize(K_ * M_, (T)0.0);          // size = K*M
-    t_.resize(K_ * M_, (T)0.0);          // size = K*M
-    r_.resize(K_, (T)0.0);               // size = K
-    a_.resize(K_, (T)0.0);               // size = K
+    indices_.resize(N_lim_, 0);         // size = N_lim_
+    w_.resize(N_lim_, (T)0.0);          // size = N_lim_
+    p_.resize(N_all_ * M, (T)0.0);      // size = N_all_ * M
+    p_raw_.resize(N_all_ * M, (T)0.0);  // size = N_all_ * M
+    q_.resize(M, (T)0.0);               // size = M
+    v_.resize(N_lim_, (T)0.0);          // size = N_lim_
+    g_.resize(M, (T)0.0);               // size = M
+    d_.resize(M, (T)0.0);               // size = M
+    s_.resize(K_ * M, (T)0.0);          // size = K*M
+    t_.resize(K_ * M, (T)0.0);          // size = K*M
+    r_.resize(K_, (T)0.0);              // size = K
+    a_.resize(K_, (T)0.0);              // size = K
 
-    std::copy_n(unnormalized_vectors, N_all_ * M_, p_raw_.begin());
-    std::copy_n(unnormalized_vectors, N_all_ * M_, p_.begin());
+    std::copy_n(unnormalized_vectors, N_all_ * M, p_raw_.begin());
+    std::copy_n(unnormalized_vectors, N_all_ * M, p_.begin());
     for (size_t n = 0; n < N_all_; n++) {
-      NormalizeVector(M_, &p_[n * M_]);
+      NormalizeVector(M, &p_[n * M]);
     }
   }
 
@@ -175,13 +175,14 @@ class SphericalAverage {
                   const int* argsorted_indices = nullptr) -> void {
     converged_ = false;
 
-    std::fill_n(w_.begin(), N_lim_, (T)0.0);
-    std::fill_n(v_.begin(), N_lim_, (T)0.0);
+    std::memset(v_.data(), 0, sizeof(T) * N_lim_);
+    std::memset(w_.data(), 0, sizeof(T) * N_lim_);
 
     if (argsorted_indices) {
       N_ = std::min(num_point, N_lim_);
-      std::copy_n(argsorted_indices, N_, indices_.begin());
+      // std::copy_n(argsorted_indices, N_, indices_.begin());
       for (size_t i = 0; i < N_; i++) {
+        indices_[i] = argsorted_indices[i];
         w_[i] = weights[indices_[i]];
         if (w_[i] == (T)0.0) {
           N_ = i;
@@ -201,28 +202,25 @@ class SphericalAverage {
         }
       }
     }
-
     if (N_ > 0 && NormalizeWeight(N_, w_.data())) {
-      std::fill_n(q_.data(), M_, (T)0.0);
-      for (size_t n = 0; n < N_; n++) {
-        AddProductC(M_, w_[n], &p_[indices_[n] * M_], q_.data());
+      MulC(M, w_[0], &p_[indices_[0] * M], q_.data());
+      for (size_t n = 1; n < N_; n++) {
+        AddProductC(M, w_[n], &p_[indices_[n] * M], q_.data());
       }
-      if (!NormalizeVector(M_, q_.data())) {
+      if (!NormalizeVector(M, q_.data())) {
         converged_ = true;
       }
     } else {
       converged_ = true;
     }
 
-    if (converged_) {
-      std::fill_n(v_.begin(), N_, (T)0.0);
-    } else {
+    if (!converged_) {
       mem_idx_ = 0;
       gamma_ = (T)1.0;
-      std::fill_n(s_.begin(), K_ * M_, (T)0.0);
-      std::fill_n(t_.begin(), K_ * M_, (T)0.0);
-      std::fill_n(r_.begin(), K_, (T)0.0);
-      std::fill_n(a_.begin(), K_, (T)0.0);
+      std::memset(s_.data(), 0, sizeof(T) * K_ * M);
+      std::memset(t_.data(), 0, sizeof(T) * K_ * M);
+      std::memset(r_.data(), 0, sizeof(T) * K_);
+      std::memset(a_.data(), 0, sizeof(T) * K_);
       UpdateVGD();
     }
   }
@@ -231,7 +229,7 @@ class SphericalAverage {
     if (converged_) {
       return true;
     }
-    T norm_d = sqrt(Dot(M_, d_.data(), d_.data()));
+    T norm_d = sqrt(Dot(M, d_.data(), d_.data()));
     if (norm_d >= 8 * std::numeric_limits<T>::epsilon()) {
       UpdateQS();
       UpdateVGDT();
@@ -243,10 +241,10 @@ class SphericalAverage {
   }
 
   auto GetResult(size_t num_feature, T* dst_vector) -> void {
-    assert(M_ == num_feature);
-    std::fill_n(dst_vector, M_, (T)0.0);
-    for (size_t n = 0; n < N_; n++) {
-      AddProductC(M_, v_[n], &p_raw_[indices_[n] * M_], dst_vector);
+    assert(M == num_feature);
+    MulC(M, v_[0], &p_raw_[indices_[0] * M], dst_vector);
+    for (size_t n = 1; n < N_; n++) {
+      AddProductC(M, v_[n], &p_raw_[indices_[n] * M], dst_vector);
     }
   }
 
@@ -268,11 +266,20 @@ class SphericalAverage {
     }
   }
 
+  inline auto MulC(size_t len, T a, const T* __restrict x, T* __restrict y)
+      -> void {
+    const T* __restrict xx = std::assume_aligned<64>(x);
+    T* __restrict yy = std::assume_aligned<64>(y);
+    for (size_t l = 0; l < len; l++) {
+      yy[l] = a * xx[l];
+    }
+  }
+
   inline auto AddProductC(size_t len, T a, const T* __restrict x,
                           T* __restrict y) -> void {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T* __restrict yy = std::assume_aligned<64>(y);
-    for (size_t l = 0; l < len; l++) {
+    for (size_t l = 0; l < len; ++l) {
       yy[l] += a * xx[l];
     }
   }
@@ -280,13 +287,13 @@ class SphericalAverage {
   inline auto Sum(size_t len, const T* __restrict x) -> T {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T y = 0;
-    for (size_t l = 0; l < len; l++) {
+    for (size_t l = 0; l < len; ++l) {
       y += xx[l];
     }
     return y;
   }
 
-  auto NormalizeVector(size_t len, T* x) -> bool {
+  inline auto NormalizeVector(size_t len, T* x) -> bool {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T norm = sqrt(Dot(len, x, x));
     if (norm > 0.0) {
@@ -294,19 +301,17 @@ class SphericalAverage {
       MulC(len, scale_factor, x);
       return true;
     } else {
-      // std::fill_n( x, len, (T)0.0 );
       return false;
     }
   }
 
-  auto NormalizeWeight(size_t len, T* x) -> bool {
+  inline auto NormalizeWeight(size_t len, T* x) -> bool {
     T sum_x = Sum(len, x);
     if (sum_x > 0.0) {
       T scale_factor = ((T)1.0) / sum_x;
       MulC(len, scale_factor, x);
       return true;
     } else {
-      // std::fill_n( x, len, (T)0.0 );
       return false;
     }
   }
@@ -332,80 +337,82 @@ class SphericalAverage {
     return y;
   }
 
-  auto ProjectVectorToPlane(size_t len, const T* __restrict x, T* __restrict y)
-      -> void {
+  inline auto ProjectVectorToPlane(size_t len, const T* __restrict x,
+                                   T* __restrict y) -> void {
     T minus_inner_product = -Dot(len, x, y);
     AddProductC(len, minus_inner_product, x, y);
   }
 
   auto UpdateVGD(void) -> void {
     T sum_w_c_s = (T)0.0;
-    std::fill_n(g_.begin(), M_, (T)0.0);
+    // std::fill_n(g_.begin(), M, (T)0.0);
+    std::memset(g_.data(), 0, sizeof(T) * M);
 
     for (size_t n = 0; n < N_; n++) {
-      T cos_th = Dot(M_, &p_[indices_[n] * M_], q_.data());
+      T cos_th = Dot(M, &p_[indices_[n] * M], q_.data());
       T theta = acos(cos_th);
       T inv_sinc_th =
           ((T)1.0) / (Sinc(theta) + std::numeric_limits<T>::epsilon());
       sum_w_c_s += w_[n] * cos_th * inv_sinc_th;
       v_[n] = w_[n] * inv_sinc_th;
       T a_n = -((T)2.0) * w_[n] * theta / sqrt(((T)1.0) - cos_th * cos_th);
-      AddProductC(M_, a_n, &p_[indices_[n] * M_], g_.data());
+      AddProductC(M, a_n, &p_[indices_[n] * M], g_.data());
     }
 
     T inv_sum_w_c_s =
         ((T)1.0) / (sum_w_c_s + std::numeric_limits<T>::epsilon());
     MulC(N_, inv_sum_w_c_s, v_.data());
 
-    ProjectVectorToPlane(M_, q_.data(), g_.data());
+    ProjectVectorToPlane(M, q_.data(), g_.data());
 
-    std::copy(g_.begin(), g_.end(), d_.begin());
+    // std::copy(g_.begin(), g_.end(), d_.begin());
+    std::memcpy(d_.data(), g_.data(), sizeof(T) * M);
     for (size_t k = 0; k < K_; k++) {
       size_t idx = (mem_idx_ - k - 1 + K_) % K_;
-      a_[idx] = r_[idx] * Dot(M_, &s_[idx * M_], d_.data());
-      AddProductC(M_, -a_[idx], &t_[idx * M_], d_.data());
+      a_[idx] = r_[idx] * Dot(M, &s_[idx * M], d_.data());
+      AddProductC(M, -a_[idx], &t_[idx * M], d_.data());
     }
-    MulC(M_, gamma_, d_.data());
+    MulC(M, gamma_, d_.data());
     for (size_t k = 0; k < K_; k++) {
       size_t idx = (mem_idx_ + k) % K_;
-      T b = r_[idx] * Dot(M_, &t_[idx * M_], d_.data());
-      AddProductC(M_, (a_[idx] - b), &s_[idx * M_], d_.data());
+      T b = r_[idx] * Dot(M, &t_[idx * M], d_.data());
+      AddProductC(M, (a_[idx] - b), &s_[idx * M], d_.data());
     }
   }
 
   void UpdateVGDT(void) {
-    std::copy(g_.begin(), g_.end(), &t_[mem_idx_ * M_]);
+    std::copy(g_.begin(), g_.end(), &t_[mem_idx_ * M]);
 
     UpdateVGD();
 
-    T* __restrict tt = std::assume_aligned<64>(&t_[mem_idx_ * M_]);
+    T* __restrict tt = std::assume_aligned<64>(&t_[mem_idx_ * M]);
     const T* __restrict gg = std::assume_aligned<64>(g_.data());
-    for (size_t m = 0; m < M_; m++) {
+    for (size_t m = 0; m < M; ++m) {
       tt[m] = gg[m] - tt[m];
     }
-    ProjectVectorToPlane(M_, q_.data(), &t_[mem_idx_ * M_]);
+    ProjectVectorToPlane(M, q_.data(), &t_[mem_idx_ * M]);
   }
 
   void UpdateQS(void) {
-    std::copy(q_.begin(), q_.end(), &s_[mem_idx_ * M_]);
+    std::copy(q_.begin(), q_.end(), &s_[mem_idx_ * M]);
 
     T* __restrict qq = std::assume_aligned<64>(q_.data());
     const T* __restrict dd = std::assume_aligned<64>(d_.data());
-    for (size_t m = 0; m < M_; m++) {
+    for (size_t m = 0; m < M; ++m) {
       qq[m] -= dd[m];
     }
-    NormalizeVector(M_, q_.data());
+    NormalizeVector(M, q_.data());
 
-    T* __restrict ss = std::assume_aligned<64>(&s_[mem_idx_ * M_]);
-    for (size_t m = 0; m < M_; m++) {
+    T* __restrict ss = std::assume_aligned<64>(&s_[mem_idx_ * M]);
+    for (size_t m = 0; m < M; ++m) {
       ss[m] = qq[m] - ss[m];
     }
   }
 
   void UpdateGammaR(void) {
-    gamma_ = Dot(M_, &s_[mem_idx_ * M_], &t_[mem_idx_ * M_]);
+    gamma_ = Dot(M, &s_[mem_idx_ * M], &t_[mem_idx_ * M]);
     r_[mem_idx_] = ((T)1.0) / gamma_;
-    gamma_ /= Dot(M_, &t_[mem_idx_ * M_], &t_[mem_idx_ * M_]);
+    gamma_ /= Dot(M, &t_[mem_idx_ * M], &t_[mem_idx_ * M]);
     mem_idx_ += 1;
     if (mem_idx_ >= K_) {
       mem_idx_ = 0;
@@ -415,7 +422,7 @@ class SphericalAverage {
   size_t N_all_;
   size_t N_lim_;
   size_t N_;
-  size_t M_;
+  // size_t M_;
   size_t K_;
 
   bool converged_;

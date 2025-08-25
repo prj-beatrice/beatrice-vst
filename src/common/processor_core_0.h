@@ -110,7 +110,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
 
   // モデルマージ
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
-  SphericalAverage<float> sph_avg_;
+  SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> sph_avg_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);
