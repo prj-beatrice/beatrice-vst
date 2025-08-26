@@ -7,6 +7,7 @@
 #include <mutex>  // NOLINT(build/c++11)
 #include <string>
 
+#include "pluginterfaces/base/fplatform.h"
 #include "vst3sdk/pluginterfaces/vst/ivstparameterchanges.h"
 #include "vst3sdk/pluginterfaces/vst/vstspeaker.h"
 
@@ -97,6 +98,11 @@ auto PLUGIN_API Processor::setActive(const TBool state) -> tresult {
 }
 
 // TODO(bug): tail を設定する
+
+auto PLUGIN_API Processor::getLatencySamples() -> uint32 {
+  std::lock_guard<std::mutex> lock(mtx_);
+  return vc_core_.GetCore()->GetLatencySamples();
+}
 
 // メイン処理
 auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {

@@ -21,6 +21,7 @@ class ProcessorCoreBase {
  public:
   virtual ~ProcessorCoreBase() = default;
   [[nodiscard]] virtual auto GetVersion() const -> int = 0;
+  [[nodiscard]] virtual auto GetLatencySamples() const -> int = 0;
   virtual auto Process(const float* input, float* output, int n_samples)
       -> ErrorCode = 0;
   virtual auto ResetContext() -> ErrorCode { return ErrorCode::kSuccess; }
@@ -91,6 +92,7 @@ class ProcessorCoreUnloaded : public ProcessorCoreBase {
  public:
   using ProcessorCoreBase::ProcessorCoreBase;
   [[nodiscard]] auto GetVersion() const -> int override { return -1; }
+  [[nodiscard]] auto GetLatencySamples() const -> int override { return 0; }
   auto Process(const float* const /*input*/, float* const output,
                const int n_samples) -> ErrorCode override {
     std::memset(output, 0, sizeof(float) * n_samples);
