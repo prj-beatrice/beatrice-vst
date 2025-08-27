@@ -8,7 +8,6 @@
 #include <numeric>
 
 #include "common/error.h"
-// #include "common/hungarian_algorithm.h"
 #include "common/model_config.h"
 
 namespace beatrice::common {

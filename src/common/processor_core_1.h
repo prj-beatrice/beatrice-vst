@@ -98,7 +98,7 @@ class ProcessorCore1 : public ProcessorCoreBase {
   Beatrice20b1_PhoneExtractor* phone_extractor_;
   Beatrice20b1_PitchEstimator* pitch_estimator_;
   Beatrice20b1_WaveformGenerator* waveform_generator_;
-  std::vector<float> speaker_embeddings_;
+  AlignedVector<float, 64> speaker_embeddings_;
   std::vector<float> formant_shift_embeddings_;
   Gain gain_;
   // 状態
