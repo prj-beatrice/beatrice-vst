@@ -73,7 +73,6 @@ smtg_add_vst3plugin(${target}
     src/common/processor_core_1.cc
     src/common/processor_core_2.cc
     src/common/processor_proxy.cc
-    src/common/hungarian_algorithm.cc
     src/vst/controller.cc
     src/vst/editor.cc
     src/vst/factory.cc
