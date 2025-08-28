@@ -91,6 +91,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   auto EndTabColumn(Context&) -> CView*;
   auto MakeVoiceMorphingView(Context&) -> CView*;
   void SyncVoiceMorphingDescription();
+  void SyncVoiceMorphingSliders();
 
   std::map<ParamID, CControl*> controls_;
   CFontRef font_, font_bold_, font_description_, font_version_;

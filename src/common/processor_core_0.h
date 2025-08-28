@@ -98,7 +98,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
   Beatrice20a2_PhoneExtractor* phone_extractor_;
   Beatrice20a2_PitchEstimator* pitch_estimator_;
   Beatrice20a2_WaveformGenerator* waveform_generator_;
-  std::vector<float> speaker_embeddings_;
+  AlignedVector<float, 64> speaker_embeddings_;
   std::vector<float> formant_shift_embeddings_;
   Gain gain_;
   // 状態
@@ -110,7 +110,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
 
   // モデルマージ
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
-  SphericalAverage<float> sph_avg_;
+  SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> sph_avg_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);

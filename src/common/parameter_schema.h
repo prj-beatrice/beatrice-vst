@@ -57,9 +57,8 @@ enum class ParameterID : std::int16_t {
   kMinSourcePitch = 12,
   kMaxSourcePitch = 13,
   kVQNumNeighbors = 14,
-  kAverageTargetPitchBase =
-      100,  // Voice Morphing Mode の分も格納するため、要素数は ( kMaxNSpeakers
-            // + 1 ) となる
+  kAverageTargetPitchBase = 100,
+  // Voice Morphing Mode の分も格納するため、要素数は(kMaxNSpeakers + 1)となる
   kVoiceMorphWeights =
       kAverageTargetPitchBase +
       (kMaxNSpeakers + 1),  // Voice Morphing Mode の重みを保存するのに使う

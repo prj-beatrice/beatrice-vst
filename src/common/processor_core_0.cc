@@ -119,9 +119,8 @@ void ProcessorCore0::Process1(const float* const input, float* const output) {
   std::array<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> speaker;
   if (target_speaker_ == n_speakers_) {
     if (!sph_avg_.Update()) {
-      sph_avg_.ApplyWeights(
-          n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-          speaker_embeddings_.data(),
+      sph_avg_.GetResult(
+          BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
           &speaker_embeddings_[n_speakers_ *
                                BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS]);
     }
@@ -264,9 +263,8 @@ auto ProcessorCore0::SetSpeakerMorphingWeight(int target_speaker_id,
   }
   speaker_morphing_weights_[target_speaker_id] = morphing_weight;
   sph_avg_.SetWeights(n_speakers_, speaker_morphing_weights_.data());
-  sph_avg_.ApplyWeights(
-      n_speakers_, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
-      speaker_embeddings_.data(),
+  sph_avg_.GetResult(
+      BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
       &speaker_embeddings_[n_speakers_ *
                            BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS]);
   return ErrorCode::kSuccess;
