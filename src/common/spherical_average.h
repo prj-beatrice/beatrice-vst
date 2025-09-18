@@ -4,7 +4,6 @@
 #define BEATRICE_COMMON_SPHERICAL_AVERAGE_H_
 
 #define _USE_MATH_DEFINES
-#include <immintrin.h>
 
 #include <algorithm>
 #include <cassert>
@@ -38,9 +37,10 @@ class AlignedAllocator {
   AlignedAllocator() noexcept = default;
 
   template <typename U>
-  AlignedAllocator(const AlignedAllocator<U, N>&) noexcept {}
+  explicit AlignedAllocator(const AlignedAllocator<U, N>&) noexcept {}
 
-  T* allocate(std::size_t n) {
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  auto allocate(std::size_t n) -> T* {
     if (n == 0) {
       return nullptr;
     }
@@ -58,9 +58,11 @@ class AlignedAllocator {
     return static_cast<T*>(ptr);
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void deallocate(T* ptr, std::size_t) noexcept { _aligned_free(ptr); }
 
   template <class U>
+  // NOLINTNEXTLINE(readability-identifier-naming)
   struct rebind {
     //! allocator type for rebinding
     using other = AlignedAllocator<U, N>;
@@ -68,14 +70,14 @@ class AlignedAllocator {
 };
 
 template <typename T, typename U, std::size_t N, std::size_t M>
-bool operator==(const AlignedAllocator<T, N>&,
-                const AlignedAllocator<U, M>&) noexcept {
+auto operator==(const AlignedAllocator<T, N>&,
+                const AlignedAllocator<U, M>&) noexcept -> bool {
   return (N == M);
 }
 
 template <typename T, typename U, std::size_t N, std::size_t M>
-bool operator!=(const AlignedAllocator<T, N>& lhs,
-                const AlignedAllocator<U, M>& rhs) noexcept {
+auto operator!=(const AlignedAllocator<T, N>& lhs,
+                const AlignedAllocator<U, M>& rhs) noexcept -> bool {
   return !(lhs == rhs);
 }
 
@@ -85,6 +87,9 @@ using AlignedVector = std::vector<T, AlignedAllocator<T, N>>;
 
 template <typename T, std::size_t M>
 class SphericalAverage {
+  static_assert(M % (64 / sizeof(T)) == 0,
+                "M must be a multiple of 64/sizeof(T)");
+
  public:
   SphericalAverage()
       : N_all_(0),
@@ -92,7 +97,6 @@ class SphericalAverage {
         N_(0),
         K_(0),
         converged_(true),
-        indices_(),
         w_(),
         p_(),
         p_raw_(),
@@ -115,7 +119,6 @@ class SphericalAverage {
         N_(0),
         K_(num_memory),
         converged_(true),
-        indices_(),
         w_(),
         p_(),
         p_raw_(),
@@ -146,23 +149,22 @@ class SphericalAverage {
     }
 
     assert(N_lim_ <= num_feature);
-    assert(M % (64 / sizeof(T)) == 0);  // M must be a multiple of 64/sizeof(T)
-    assert(num_feature == M);           // num_feature must be equal to M
+    assert(num_feature == M);  // num_feature must be equal to M
 
     N_ = 0;
     K_ = num_memory;
-    indices_.resize(N_lim_, 0);         // size = N_lim_
-    w_.resize(N_lim_, (T)0.0);          // size = N_lim_
-    p_.resize(N_all_ * M, (T)0.0);      // size = N_all_ * M
-    p_raw_.resize(N_all_ * M, (T)0.0);  // size = N_all_ * M
-    q_.resize(M, (T)0.0);               // size = M
-    v_.resize(N_lim_, (T)0.0);          // size = N_lim_
-    g_.resize(M, (T)0.0);               // size = M
-    d_.resize(M, (T)0.0);               // size = M
-    s_.resize(K_ * M, (T)0.0);          // size = K*M
-    t_.resize(K_ * M, (T)0.0);          // size = K*M
-    r_.resize(K_, (T)0.0);              // size = K
-    a_.resize(K_, (T)0.0);              // size = K
+    indices_.resize(N_lim_);    // size = N_lim_
+    w_.resize(N_lim_);          // size = N_lim_
+    p_.resize(N_all_ * M);      // size = N_all_ * M
+    p_raw_.resize(N_all_ * M);  // size = N_all_ * M
+    q_.resize(M);               // size = M
+    v_.resize(N_lim_);          // size = N_lim_
+    g_.resize(M);               // size = M
+    d_.resize(M);               // size = M
+    s_.resize(K_ * M);          // size = K*M
+    t_.resize(K_ * M);          // size = K*M
+    r_.resize(K_);              // size = K
+    a_.resize(K_);              // size = K
 
     std::copy_n(unnormalized_vectors, N_all_ * M, p_raw_.begin());
     std::copy_n(unnormalized_vectors, N_all_ * M, p_.begin());
@@ -184,7 +186,7 @@ class SphericalAverage {
       for (size_t i = 0; i < N_; i++) {
         indices_[i] = argsorted_indices[i];
         w_[i] = weights[indices_[i]];
-        if (w_[i] == (T)0.0) {
+        if (w_[i] == static_cast<T>(0.0)) {
           N_ = i;
           break;
         }
@@ -192,7 +194,7 @@ class SphericalAverage {
     } else {
       N_ = 0;
       for (size_t i = 0; i < num_point; i++) {
-        if (weights[i] > (T)0.0) {
+        if (weights[i] > static_cast<T>(0.0)) {
           indices_[N_] = i;
           w_[N_] = weights[i];
           N_++;
@@ -216,7 +218,7 @@ class SphericalAverage {
 
     if (!converged_) {
       mem_idx_ = 0;
-      gamma_ = (T)1.0;
+      gamma_ = static_cast<T>(1.0);
       std::memset(s_.data(), 0, sizeof(T) * K_ * M);
       std::memset(t_.data(), 0, sizeof(T) * K_ * M);
       std::memset(r_.data(), 0, sizeof(T) * K_);
@@ -241,33 +243,33 @@ class SphericalAverage {
   }
 
   auto GetResult(size_t num_feature, T* dst_vector) -> void {
+    T* __restrict y = std::assume_aligned<64>(dst_vector);
     assert(M == num_feature);
-    MulC(M, v_[0], &p_raw_[indices_[0] * M], dst_vector);
+    MulC(M, v_[0], &p_raw_[indices_[0] * M], y);
     for (size_t n = 1; n < N_; n++) {
-      AddProductC(M, v_[n], &p_raw_[indices_[n] * M], dst_vector);
+      AddProductC(M, v_[n], &p_raw_[indices_[n] * M], y);
     }
   }
 
  private:
-  inline auto Dot(size_t len, const T* x1, const T* x2) -> T {
+  auto Dot(size_t len, const T* x1, const T* x2) -> T {
     const T* __restrict xx1 = std::assume_aligned<64>(x1);
     const T* __restrict xx2 = std::assume_aligned<64>(x2);
-    T y = (T)0;
+    T y = static_cast<T>(0.0);
     for (size_t l = 0; l < len; l++) {
       y += xx1[l] * xx2[l];
     }
     return y;
   }
 
-  inline auto MulC(size_t len, T a, T* x) -> void {
+  auto MulC(size_t len, T a, T* x) -> void {
     T* __restrict xx = std::assume_aligned<64>(x);
     for (size_t l = 0; l < len; l++) {
       xx[l] *= a;
     }
   }
 
-  inline auto MulC(size_t len, T a, const T* __restrict x, T* __restrict y)
-      -> void {
+  auto MulC(size_t len, T a, const T* __restrict x, T* __restrict y) -> void {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T* __restrict yy = std::assume_aligned<64>(y);
     for (size_t l = 0; l < len; l++) {
@@ -275,8 +277,8 @@ class SphericalAverage {
     }
   }
 
-  inline auto AddProductC(size_t len, T a, const T* __restrict x,
-                          T* __restrict y) -> void {
+  auto AddProductC(size_t len, T a, const T* __restrict x, T* __restrict y)
+      -> void {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T* __restrict yy = std::assume_aligned<64>(y);
     for (size_t l = 0; l < len; ++l) {
@@ -284,7 +286,7 @@ class SphericalAverage {
     }
   }
 
-  inline auto Sum(size_t len, const T* __restrict x) -> T {
+  auto Sum(size_t len, const T* __restrict x) -> T {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T y = 0;
     for (size_t l = 0; l < len; ++l) {
@@ -293,11 +295,11 @@ class SphericalAverage {
     return y;
   }
 
-  inline auto NormalizeVector(size_t len, T* x) -> bool {
+  auto NormalizeVector(size_t len, T* x) -> bool {
     const T* __restrict xx = std::assume_aligned<64>(x);
     T norm = sqrt(Dot(len, x, x));
-    if (norm > 0.0) {
-      T scale_factor = ((T)1.0) / norm;
+    if (norm > static_cast<T>(0.0)) {
+      T scale_factor = static_cast<T>(1.0) / norm;
       MulC(len, scale_factor, x);
       return true;
     } else {
@@ -305,10 +307,10 @@ class SphericalAverage {
     }
   }
 
-  inline auto NormalizeWeight(size_t len, T* x) -> bool {
+  auto NormalizeWeight(size_t len, T* x) -> bool {
     T sum_x = Sum(len, x);
-    if (sum_x > 0.0) {
-      T scale_factor = ((T)1.0) / sum_x;
+    if (sum_x > static_cast<T>(0.0)) {
+      T scale_factor = static_cast<T>(1.0) / sum_x;
       MulC(len, scale_factor, x);
       return true;
     } else {
@@ -337,30 +339,31 @@ class SphericalAverage {
     return y;
   }
 
-  inline auto ProjectVectorToPlane(size_t len, const T* __restrict x,
-                                   T* __restrict y) -> void {
+  auto ProjectVectorToPlane(size_t len, const T* __restrict x, T* __restrict y)
+      -> void {
     T minus_inner_product = -Dot(len, x, y);
     AddProductC(len, minus_inner_product, x, y);
   }
 
-  auto UpdateVGD(void) -> void {
-    T sum_w_c_s = (T)0.0;
+  auto UpdateVGD() -> void {
+    T sum_w_c_s = static_cast<T>(0.0);
     // std::fill_n(g_.begin(), M, (T)0.0);
     std::memset(g_.data(), 0, sizeof(T) * M);
 
     for (size_t n = 0; n < N_; n++) {
       T cos_th = Dot(M, &p_[indices_[n] * M], q_.data());
       T theta = acos(cos_th);
-      T inv_sinc_th =
-          ((T)1.0) / (Sinc(theta) + std::numeric_limits<T>::epsilon());
+      T inv_sinc_th = static_cast<T>(1.0) /
+                      (Sinc(theta) + std::numeric_limits<T>::epsilon());
       sum_w_c_s += w_[n] * cos_th * inv_sinc_th;
       v_[n] = w_[n] * inv_sinc_th;
-      T a_n = -((T)2.0) * w_[n] * theta / sqrt(((T)1.0) - cos_th * cos_th);
+      T a_n = -static_cast<T>(2.0) * w_[n] * theta /
+              sqrt(static_cast<T>(1.0) - cos_th * cos_th);
       AddProductC(M, a_n, &p_[indices_[n] * M], g_.data());
     }
 
     T inv_sum_w_c_s =
-        ((T)1.0) / (sum_w_c_s + std::numeric_limits<T>::epsilon());
+        static_cast<T>(1.0) / (sum_w_c_s + std::numeric_limits<T>::epsilon());
     MulC(N_, inv_sum_w_c_s, v_.data());
 
     ProjectVectorToPlane(M, q_.data(), g_.data());
@@ -380,7 +383,7 @@ class SphericalAverage {
     }
   }
 
-  void UpdateVGDT(void) {
+  auto UpdateVGDT() -> void {
     std::copy(g_.begin(), g_.end(), &t_[mem_idx_ * M]);
 
     UpdateVGD();
@@ -393,7 +396,7 @@ class SphericalAverage {
     ProjectVectorToPlane(M, q_.data(), &t_[mem_idx_ * M]);
   }
 
-  void UpdateQS(void) {
+  auto UpdateQS() -> void {
     std::copy(q_.begin(), q_.end(), &s_[mem_idx_ * M]);
 
     T* __restrict qq = std::assume_aligned<64>(q_.data());
@@ -409,9 +412,9 @@ class SphericalAverage {
     }
   }
 
-  void UpdateGammaR(void) {
+  auto UpdateGammaR() -> void {
     gamma_ = Dot(M, &s_[mem_idx_ * M], &t_[mem_idx_ * M]);
-    r_[mem_idx_] = ((T)1.0) / gamma_;
+    r_[mem_idx_] = static_cast<T>(1.0) / gamma_;
     gamma_ /= Dot(M, &t_[mem_idx_ * M], &t_[mem_idx_ * M]);
     mem_idx_ += 1;
     if (mem_idx_ >= K_) {

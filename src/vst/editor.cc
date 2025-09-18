@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 
 #include "beatricelib/beatrice.h"
@@ -49,6 +50,7 @@ using VSTGUI::getPlatformFactory;
 using VSTGUI::kBoldFace;
 using VSTGUI::kNormalFont;
 
+// NOLINTNEXTLINE(readability-identifier-naming)
 namespace BitmapFilter = VSTGUI::BitmapFilter;
 
 Editor::Editor(void* const controller)
@@ -1006,7 +1008,8 @@ void Editor::SyncVoiceMorphingDescription() {
     if (morphing_labels_[i]->isVisible()) {
       auto control =
           controls_.at(static_cast<int>(ParameterID::kVoiceMorphWeights) + i);
-      if (control->getValue() >= (0.01f - FLT_EPSILON)) {
+      if (control->getValue() >=
+          (0.01f - std::numeric_limits<float>::epsilon())) {
         str += model_config_->voices[i].name;
         str += u8"\n";
         str += model_config_->voices[i].description;
@@ -1041,7 +1044,8 @@ void Editor::SyncVoiceMorphingSliders() {
       // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
       // 挙動が見られたため、その場合のケア
       // 閾値はスライダーの段階依存なので、スライダーの段階に応じた適切な値を設定する
-      if (slider->getValue() >= (0.01f - FLT_EPSILON)) {
+      if (slider->getValue() >=
+          (0.01f - std::numeric_limits<float>::epsilon())) {
         ++non_zero_count;
       } else {
         f_set_zero(slider);
@@ -1065,7 +1069,8 @@ void Editor::SyncVoiceMorphingSliders() {
         auto* const slider =
             static_cast<Slider*>(controls_.at(static_cast<ParamID>(
                 static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-        if (slider->getValue() >= (0.01f - FLT_EPSILON)) {
+        if (slider->getValue() >=
+            (0.01f - std::numeric_limits<float>::epsilon())) {
           if (counter++ < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
             slider->SetEnabled(true);
           } else {

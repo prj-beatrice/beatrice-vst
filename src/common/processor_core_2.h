@@ -5,6 +5,7 @@
 
 #include <array>
 #include <filesystem>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -50,7 +51,6 @@ class ProcessorCore2 : public ProcessorCoreBase {
             speaker_morphing_weights_pruned_.begin(),
             speaker_morphing_weights_pruned_.end()),
 #endif
-        sph_avg_a_(),
         sph_avgs_k_() {
   }
   ~ProcessorCore2() override {
@@ -143,7 +143,7 @@ class ProcessorCore2 : public ProcessorCoreBase {
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_pruned_;
   std::array<int, kMaxNSpeakers> speaker_morphing_weights_argsort_indices_;
-  int speaker_morphing_state_counter_ = INT_MAX;
+  int speaker_morphing_state_counter_ = std::numeric_limits<int>::max();
 #if 0
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
 #elif 1

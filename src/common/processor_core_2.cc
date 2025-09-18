@@ -52,11 +52,11 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
                        speaker_morphing_state_counter_ / kSphAvgMaxNState;
       auto end_idx = BEATRICE_20RC0_KV_LENGTH *
                      (speaker_morphing_state_counter_ + 1) / kSphAvgMaxNState;
-      for (size_t i = start_idx; i < end_idx; ++i) {
+      for (int i = start_idx; i < end_idx; ++i) {
         sph_avgs_c_[i].SetWeights(
             n_speakers_, speaker_morphing_weights_pruned_.data(),
             speaker_morphing_weights_argsort_indices_.data());
-        for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
+        for (int j = 0; j < kSphAvgMaxNUpdates; ++j) {
           if (sph_avgs_c_[i].Update()) break;
         }
         sph_avgs_c_[i].GetResult(
@@ -103,7 +103,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
       sph_avg_a_.SetWeights(n_speakers_,
                             speaker_morphing_weights_pruned_.data(),
                             speaker_morphing_weights_argsort_indices_.data());
-      for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
+      for (int j = 0; j < kSphAvgMaxNUpdates; ++j) {
         if (sph_avg_a_.Update()) break;
       }
       sph_avg_a_.GetResult(
@@ -124,11 +124,11 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
                        speaker_morphing_state_counter_ / kSphAvgMaxNState;
       auto end_idx = BEATRICE_20RC0_KV_LENGTH *
                      (speaker_morphing_state_counter_ + 1) / kSphAvgMaxNState;
-      for (size_t i = start_idx; i < end_idx; ++i) {
+      for (int i = start_idx; i < end_idx; ++i) {
         sph_avgs_k_[i].SetWeights(
             n_speakers_, speaker_morphing_weights_pruned_.data(),
             speaker_morphing_weights_argsort_indices_.data());
-        for (size_t j = 0; j < kSphAvgMaxNUpdates; ++j) {
+        for (int j = 0; j < kSphAvgMaxNUpdates; ++j) {
           if (sph_avgs_k_[i].Update()) break;
         }
         sph_avgs_k_[i].GetResult(
@@ -345,8 +345,8 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
   // codebook モーフィング用に sph_avg を初期化する
   std::vector<float> codebook_block(n_speakers_ *
                                     BEATRICE_20RC0_PHONE_CHANNELS);
-  for (size_t i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
-    for (size_t j = 0; j < n_speakers_; ++j) {
+  for (int i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
+    for (int j = 0; j < n_speakers_; ++j) {
       std::copy_n(codebooks_.data() + (j * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
                                           BEATRICE_20RC0_PHONE_CHANNELS,
                   BEATRICE_20RC0_PHONE_CHANNELS,
@@ -366,8 +366,8 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
   // key-value モーフィング用に sph_avg を初期化する
   std::vector<float> key_value_block(
       n_speakers_ * BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
-  for (size_t i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
-    for (size_t j = 0; j < n_speakers_; ++j) {
+  for (int i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
+    for (int j = 0; j < n_speakers_; ++j) {
       std::copy_n(key_value_speaker_embeddings_.data() +
                       (j * BEATRICE_20RC0_KV_LENGTH + i) *
                           BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
@@ -379,7 +379,7 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
         n_speakers_, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
         key_value_block.data(), std::min(n_speakers_, kSphAvgMaxNSpeakers));
   }
-  speaker_morphing_state_counter_ = INT_MAX;
+  speaker_morphing_state_counter_ = std::numeric_limits<int>::max();
 
   is_ready_to_set_speaker_ = true;
 
@@ -486,16 +486,15 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
     /* 非ゼロ weight の個数が設定値を超えないように、大きい方から順番に残す */
     auto& indices = speaker_morphing_weights_argsort_indices_;
     std::iota(indices.data(), indices.data() + n_speakers_, 0);
-    std::sort(indices.data(), indices.data() + n_speakers_,
-              [this](size_t a, size_t b) {
-                return speaker_morphing_weights_[a] >
-                       speaker_morphing_weights_[b];
-              });
-    for (size_t i = 0; i < kSphAvgMaxNSpeakers; ++i) {
+    std::sort(
+        indices.data(), indices.data() + n_speakers_, [this](int a, int b) {
+          return speaker_morphing_weights_[a] > speaker_morphing_weights_[b];
+        });
+    for (int i = 0; i < kSphAvgMaxNSpeakers; ++i) {
       speaker_morphing_weights_pruned_[indices[i]] =
           speaker_morphing_weights_[indices[i]];
     }
-    for (size_t i = kSphAvgMaxNSpeakers; i < n_speakers_; ++i) {
+    for (int i = kSphAvgMaxNSpeakers; i < n_speakers_; ++i) {
       speaker_morphing_weights_pruned_[indices[i]] = 0.0;
     }
 
