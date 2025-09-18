@@ -242,8 +242,8 @@ class SphericalAverage {
     return converged_;
   }
 
-  auto GetResult(size_t num_feature, T* dst_vector) -> void {
-    T* __restrict y = std::assume_aligned<64>(dst_vector);
+  auto GetResult(size_t num_feature, T* aligned_dst_vector) -> void {
+    T* __restrict y = std::assume_aligned<64>(aligned_dst_vector);
     assert(M == num_feature);
     MulC(M, v_[0], &p_raw_[indices_[0] * M], y);
     for (size_t n = 1; n < N_; n++) {

@@ -1023,23 +1023,17 @@ void Editor::SyncVoiceMorphingDescription() {
 }
 
 void Editor::SyncVoiceMorphingSliders() {
-  if (model_config_->model.VersionInt() >= 2) {
+  if (model_config_ && model_config_->model.VersionInt() >= 2) {
     int non_zero_count = 0;
     auto f_set_zero = [this](Slider* slider) {
       slider->setValue(0.0f);
       slider->setDirty();
-      valueChanged(slider);
     };
 
     for (int i = 0; i < common::kMaxNSpeakers; ++i) {
       auto* const slider =
           static_cast<Slider*>(controls_.at(static_cast<ParamID>(
               static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-      if (!slider->IsEnabled()) {
-        // Disable にされてるスライダーを DAW 側から
-        // コントロールされた場合のケア
-        f_set_zero(slider);
-      }
 
       // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
       // 挙動が見られたため、その場合のケア
@@ -1062,21 +1056,15 @@ void Editor::SyncVoiceMorphingSliders() {
       }
     } else {
       // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
-      // それ以上非ゼロの重みが増えないようにする
-      // また、上限を超えていた分については、それ以降の重みを強制的にゼロにする
-      int counter = 0;
+      // GUI経由でそれ以上非ゼロの重みが増えないようにする
+      // (DAW側からは変化しうるので、非ゼロの重みが増えることはある)
       for (int i = 0; i < common::kMaxNSpeakers; ++i) {
         auto* const slider =
             static_cast<Slider*>(controls_.at(static_cast<ParamID>(
                 static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
         if (slider->getValue() >=
             (0.01f - std::numeric_limits<float>::epsilon())) {
-          if (counter++ < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
-            slider->SetEnabled(true);
-          } else {
-            f_set_zero(slider);
-            slider->SetEnabled(false);
-          }
+          slider->SetEnabled(true);
         } else {
           slider->SetEnabled(false);
         }
