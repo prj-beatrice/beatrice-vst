@@ -3,15 +3,13 @@
 #ifndef BEATRICE_COMMON_SPHERICAL_AVERAGE_H_
 #define BEATRICE_COMMON_SPHERICAL_AVERAGE_H_
 
-#define _USE_MATH_DEFINES
-
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <limits>
-#include <stdexcept>
+#include <memory>
 #include <vector>
 
 /**
