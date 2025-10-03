@@ -5,6 +5,8 @@
 
 #include <array>
 #include <filesystem>
+#include <limits>
+#include <random>
 #include <vector>
 
 #include "beatricelib/beatrice.h"
@@ -22,6 +24,8 @@ namespace beatrice::common {
 // 2.0.0-rc.0 用の信号処理クラス
 class ProcessorCore2 : public ProcessorCoreBase {
  public:
+  static constexpr int kSphAvgMaxNSpeakers = 8;
+
   explicit ProcessorCore2(const double sample_rate)
       : ProcessorCoreBase(),
         any_freq_in_out_(sample_rate),
@@ -36,7 +40,19 @@ class ProcessorCore2 : public ProcessorCoreBase {
         embedding_context_(Beatrice20rc0_CreateEmbeddingContext()),
         input_gain_context_(sample_rate),
         output_gain_context_(sample_rate),
-        speaker_morphing_weights_() {}
+        speaker_morphing_weights_{0.0f},
+        speaker_morphing_weights_pruned_{0.0f},
+        speaker_morphing_weights_argsort_indices_{0},
+#if 0
+        sph_avgs_c_(),
+#else
+        speaker_morphing_codebook_lottery_engine_(std::random_device{}()),
+        speaker_morphing_codebook_lottery_(
+            speaker_morphing_weights_pruned_.begin(),
+            speaker_morphing_weights_pruned_.end()),
+#endif
+        sph_avgs_k_() {
+  }
   ~ProcessorCore2() override {
     Beatrice20rc0_DestroyPhoneExtractor(phone_extractor_);
     Beatrice20rc0_DestroyPitchEstimator(pitch_estimator_);
@@ -76,6 +92,9 @@ class ProcessorCore2 : public ProcessorCoreBase {
       -> ErrorCode override;
 
  private:
+  static constexpr int kSphAvgMaxNUpdates = 4;
+  static constexpr int kSphAvgMaxNState = 4;
+
   class ConvertWithModelBlockSize {
    public:
     ConvertWithModelBlockSize() = default;
@@ -105,10 +124,10 @@ class ProcessorCore2 : public ProcessorCoreBase {
   Beatrice20rc0_PitchEstimator* pitch_estimator_;
   Beatrice20rc0_WaveformGenerator* waveform_generator_;
   Beatrice20rc0_EmbeddingSetter* embedding_setter_;
-  std::vector<float> codebooks_;
-  std::vector<float> additive_speaker_embeddings_;
-  std::vector<float> formant_shift_embeddings_;
-  std::vector<float> key_value_speaker_embeddings_;
+  AlignedVector<float, 64> codebooks_;
+  AlignedVector<float, 64> additive_speaker_embeddings_;
+  AlignedVector<float, 64> formant_shift_embeddings_;
+  AlignedVector<float, 64> key_value_speaker_embeddings_;
   Gain gain_;
   // 状態
   Beatrice20rc0_PhoneContext1* phone_context_;
@@ -122,7 +141,21 @@ class ProcessorCore2 : public ProcessorCoreBase {
 
   // モデルマージ
   std::array<float, kMaxNSpeakers> speaker_morphing_weights_;
-  SphericalAverage<float> sph_avg_;
+  std::array<float, kMaxNSpeakers> speaker_morphing_weights_pruned_;
+  std::array<int, kMaxNSpeakers> speaker_morphing_weights_argsort_indices_;
+  int speaker_morphing_state_counter_ = std::numeric_limits<int>::max();
+#if 0
+  std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
+#elif 1
+  std::mt19937 speaker_morphing_codebook_lottery_engine_;
+  std::discrete_distribution<int> speaker_morphing_codebook_lottery_;
+#endif
+  SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS>
+      sph_avg_a_;
+  std::array<
+      SphericalAverage<float, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS>,
+      BEATRICE_20RC0_KV_LENGTH>
+      sph_avgs_k_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
   void Process1(const float* input, float* output);

@@ -403,6 +403,10 @@ const ParameterSchema kSchema = [] {
             // キャプチャ付きのラムダ式を格納できなかった。
             // std::function を用いる定義に書き直すと格納できるようになる。
             [i](ProcessorProxy& vc, double value) {
+              // 微小な非ゼロの値が入ってると面倒なので念の為ゼロに丸める
+              if (value < 0.01 - std::numeric_limits<double>::epsilon()) {
+                value = 0.0;
+              }
               return vc.GetCore()->SetSpeakerMorphingWeight(i, value);
             }));
   }

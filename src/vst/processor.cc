@@ -26,6 +26,7 @@ namespace beatrice::vst {
 using Steinberg::kResultFalse;
 using Steinberg::kResultOk;
 using Steinberg::kResultTrue;
+// NOLINTNEXTLINE(readability-identifier-naming)
 namespace SpeakerArr = Steinberg::Vst::SpeakerArr;
 
 // コンストラクタ

@@ -44,6 +44,8 @@ add_compile_options("$<$<C_COMPILER_ID:MSVC>:/MT>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/MT>")
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
+add_compile_options("$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>")
+add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>")
 
 set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES 0)
 set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES 0)

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstring>
 #include <filesystem>
+#include <numeric>
 
 #include "common/error.h"
 #include "common/model_config.h"
@@ -39,6 +40,118 @@ auto ProcessorCore2::Process(const float* const input, float* const output,
 }
 
 void ProcessorCore2::Process1(const float* const input, float* const output) {
+  if (target_speaker_ == n_speakers_) {
+    // モーフィング処理
+    // codebookについては色々処理の候補があるのでマクロで分岐
+
+#if 0
+    if (speaker_morphing_state_counter_ < kSphAvgMaxNState) {
+      // spherical average を使う場合
+      // 数が多くて計算量が重いので、時分割処理を行う。
+      auto start_idx = BEATRICE_20RC0_KV_LENGTH *
+                       speaker_morphing_state_counter_ / kSphAvgMaxNState;
+      auto end_idx = BEATRICE_20RC0_KV_LENGTH *
+                     (speaker_morphing_state_counter_ + 1) / kSphAvgMaxNState;
+      for (int i = start_idx; i < end_idx; ++i) {
+        sph_avgs_c_[i].SetWeights(
+            n_speakers_, speaker_morphing_weights_pruned_.data(),
+            speaker_morphing_weights_argsort_indices_.data());
+        for (int j = 0; j < kSphAvgMaxNUpdates; ++j) {
+          if (sph_avgs_c_[i].Update()) break;
+        }
+        sph_avgs_c_[i].GetResult(
+            BEATRICE_20RC0_PHONE_CHANNELS,
+            codebooks_.data() +
+                (n_speakers_ * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
+                    BEATRICE_20RC0_PHONE_CHANNELS);
+      }
+    } else if (speaker_morphing_state_counter_ == kSphAvgMaxNState) {
+      Beatrice20rc0_SetCodebook(
+          phone_context_,
+          codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                             BEATRICE_20RC0_PHONE_CHANNELS));
+    }
+#elif 0
+    if (speaker_morphing_state_counter_ == 0) {
+      // 最大重みを持つ話者の情報をそのまま採用する場合
+      // この場合 codebook のサイズは
+      // (n_speaker_+1)ではなくて(n_speaker_)で十分
+      Beatrice20rc0_SetCodebook(
+          phone_context_,
+          codebooks_.data() + speaker_morphing_weights_argsort_indices_[0] *
+                                  (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                   BEATRICE_20RC0_PHONE_CHANNELS));
+    }
+#else
+    // 重みを抽選確率として用いて毎フレームランダムな話者ののものを抽選で選ぶ場合
+    // この場合も codebook のサイズは (n_speaker_+1)ではなくて(n_speaker_)で十分
+    speaker_morphing_codebook_lottery_.param(
+        std::discrete_distribution<int>::param_type(
+            speaker_morphing_weights_pruned_.begin(),
+            speaker_morphing_weights_pruned_.end()));
+    auto idx = speaker_morphing_codebook_lottery_(
+        speaker_morphing_codebook_lottery_engine_);
+    Beatrice20rc0_SetCodebook(
+        phone_context_,
+        codebooks_.data() + idx * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                   BEATRICE_20RC0_PHONE_CHANNELS));
+#endif
+
+    if (speaker_morphing_state_counter_ == 0) {
+      // additive_speaker_embeddings については
+      // 重みの更新があった次のフレームで一気に更新する
+      sph_avg_a_.SetWeights(n_speakers_,
+                            speaker_morphing_weights_pruned_.data(),
+                            speaker_morphing_weights_argsort_indices_.data());
+      for (int j = 0; j < kSphAvgMaxNUpdates; ++j) {
+        if (sph_avg_a_.Update()) break;
+      }
+      sph_avg_a_.GetResult(
+          BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+          additive_speaker_embeddings_.data() +
+              n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS);
+      Beatrice20rc0_SetAdditiveSpeakerEmbedding(
+          embedding_setter_,
+          additive_speaker_embeddings_.data() +
+              n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+          embedding_context_, waveform_context_);
+    }
+
+    if (speaker_morphing_state_counter_ < kSphAvgMaxNState) {
+      // key_value_speaker_embeddings_ の spherical average については
+      // 重めの処理なので数フレームに分けて計算する
+      auto start_idx = BEATRICE_20RC0_KV_LENGTH *
+                       speaker_morphing_state_counter_ / kSphAvgMaxNState;
+      auto end_idx = BEATRICE_20RC0_KV_LENGTH *
+                     (speaker_morphing_state_counter_ + 1) / kSphAvgMaxNState;
+      for (int i = start_idx; i < end_idx; ++i) {
+        sph_avgs_k_[i].SetWeights(
+            n_speakers_, speaker_morphing_weights_pruned_.data(),
+            speaker_morphing_weights_argsort_indices_.data());
+        for (int j = 0; j < kSphAvgMaxNUpdates; ++j) {
+          if (sph_avgs_k_[i].Update()) break;
+        }
+        sph_avgs_k_[i].GetResult(
+            BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+            key_value_speaker_embeddings_.data() +
+                (n_speakers_ * BEATRICE_20RC0_KV_LENGTH + i) *
+                    BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+      }
+    } else if (speaker_morphing_state_counter_ == kSphAvgMaxNState) {
+      Beatrice20rc0_RegisterKeyValueSpeakerEmbedding(
+          embedding_setter_,
+          key_value_speaker_embeddings_.data() +
+              n_speakers_ * (BEATRICE_20RC0_KV_LENGTH *
+                             BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS),
+          embedding_context_);
+      key_value_speaker_embedding_set_count_ = 0;
+    }
+
+    if (speaker_morphing_state_counter_ <= kSphAvgMaxNState) {
+      ++speaker_morphing_state_counter_;
+    }
+  }
+
   // Beatrice20rc0_SetKeyValueSpeakerEmbedding は重めの処理なので
   // 4 フレームかけて処理する
   SetKeyValueSpeakerEmbedding();
@@ -194,6 +307,7 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
           &n_speakers_)) {
     return static_cast<ErrorCode>(err);
   }
+  // ここで (n_speakers_ + 1) なのは、末尾にモーフィング結果を格納するため
   codebooks_.resize((n_speakers_ + 1) * (BEATRICE_20RC0_CODEBOOK_SIZE *
                                          BEATRICE_20RC0_PHONE_CHANNELS));
   additive_speaker_embeddings_.resize(
@@ -211,6 +325,62 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
           key_value_speaker_embeddings_.data())) {
     return static_cast<ErrorCode>(err);
   }
+
+  // モーフィング結果格納用の領域はファイルからの読み込み時に初期化されないので念の為ここで初期化しておく
+  std::fill_n(codebooks_.data() + n_speakers_ * (BEATRICE_20RC0_CODEBOOK_SIZE *
+                                                 BEATRICE_20RC0_PHONE_CHANNELS),
+              BEATRICE_20RC0_CODEBOOK_SIZE * BEATRICE_20RC0_PHONE_CHANNELS,
+              0.0f);
+  std::fill_n(additive_speaker_embeddings_.data() +
+                  n_speakers_ * BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+              BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS, 0.0f);
+  std::fill_n(
+      key_value_speaker_embeddings_.data() +
+          n_speakers_ * (BEATRICE_20RC0_KV_LENGTH *
+                         BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS),
+      BEATRICE_20RC0_KV_LENGTH * BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+      0.0f);
+
+#if 0
+  // codebook モーフィング用に sph_avg を初期化する
+  std::vector<float> codebook_block(n_speakers_ *
+                                    BEATRICE_20RC0_PHONE_CHANNELS);
+  for (int i = 0; i < BEATRICE_20RC0_CODEBOOK_SIZE; ++i) {
+    for (int j = 0; j < n_speakers_; ++j) {
+      std::copy_n(codebooks_.data() + (j * BEATRICE_20RC0_CODEBOOK_SIZE + i) *
+                                          BEATRICE_20RC0_PHONE_CHANNELS,
+                  BEATRICE_20RC0_PHONE_CHANNELS,
+                  codebook_block.data() + j * BEATRICE_20RC0_PHONE_CHANNELS);
+    }
+    sph_avgs_c_[i].Initialize(n_speakers_, BEATRICE_20RC0_PHONE_CHANNELS,
+                              codebook_block.data(), kSphAvgMaxNSpeakers);
+  }
+#endif
+
+  // additive_speaker_embeddings モーフィング用の sph_avg を初期化する
+  sph_avg_a_.Initialize(n_speakers_,
+                        BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
+                        additive_speaker_embeddings_.data(),
+                        std::min(n_speakers_, kSphAvgMaxNSpeakers));
+
+  // key-value モーフィング用に sph_avg を初期化する
+  std::vector<float> key_value_block(
+      n_speakers_ * BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+  for (int i = 0; i < BEATRICE_20RC0_KV_LENGTH; ++i) {
+    for (int j = 0; j < n_speakers_; ++j) {
+      std::copy_n(key_value_speaker_embeddings_.data() +
+                      (j * BEATRICE_20RC0_KV_LENGTH + i) *
+                          BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+                  BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+                  key_value_block.data() +
+                      j * BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS);
+    }
+    sph_avgs_k_[i].Initialize(
+        n_speakers_, BEATRICE_20RC0_KV_SPEAKER_EMBEDDING_CHANNELS,
+        key_value_block.data(), std::min(n_speakers_, kSphAvgMaxNSpeakers));
+  }
+  speaker_morphing_state_counter_ = std::numeric_limits<int>::max();
+
   is_ready_to_set_speaker_ = true;
 
   // 目標話者を 0 に設定する
@@ -304,7 +474,35 @@ auto ProcessorCore2::SetOutputGain(const double new_output_gain) -> ErrorCode {
 auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
                                               double morphing_weight)
     -> ErrorCode {
-  // 未実装
+  if (!is_ready_to_set_speaker_) {
+    return ErrorCode::kModelNotLoaded;
+  }
+  if (target_speaker_id < 0 || target_speaker_id >= kMaxNSpeakers) {
+    return ErrorCode::kSpeakerIDOutOfRange;
+  }
+  speaker_morphing_weights_[target_speaker_id] = morphing_weight;
+
+  if (target_speaker_id < n_speakers_) {
+    /* 非ゼロ weight の個数が設定値を超えないように、大きい方から順番に残す */
+    auto& indices = speaker_morphing_weights_argsort_indices_;
+    std::iota(indices.data(), indices.data() + n_speakers_, 0);
+    std::sort(
+        indices.data(), indices.data() + n_speakers_, [this](int a, int b) {
+          return speaker_morphing_weights_[a] > speaker_morphing_weights_[b];
+        });
+    for (int i = 0; i < kSphAvgMaxNSpeakers; ++i) {
+      speaker_morphing_weights_pruned_[indices[i]] =
+          speaker_morphing_weights_[indices[i]];
+    }
+    for (int i = kSphAvgMaxNSpeakers; i < n_speakers_; ++i) {
+      speaker_morphing_weights_pruned_[indices[i]] = 0.0;
+    }
+
+    // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
+    // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、
+    // フラグだけ立てて次のフレームから更新するようにする。
+    speaker_morphing_state_counter_ = 0;
+  }
   return ErrorCode::kSuccess;
 }
 

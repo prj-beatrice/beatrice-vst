@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <memory>
 
 #include "beatricelib/beatrice.h"
@@ -24,6 +25,7 @@
 // Beatrice
 #include "common/error.h"
 #include "common/parameter_schema.h"
+#include "common/processor_core_2.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
 #include "vst/parameter.h"
@@ -48,6 +50,7 @@ using VSTGUI::getPlatformFactory;
 using VSTGUI::kBoldFace;
 using VSTGUI::kNormalFont;
 
+// NOLINTNEXTLINE(readability-identifier-naming)
 namespace BitmapFilter = VSTGUI::BitmapFilter;
 
 Editor::Editor(void* const controller)
@@ -231,6 +234,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       // model_voice_description_->SetVoiceDescription(
       //    u8"< Voice Morphing Mode >");
       SyncVoiceMorphingDescription();
+      SyncVoiceMorphingSliders();
       tab_view_->selectTab(1);
     }
   } else if (vst_param_id >=
@@ -244,6 +248,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       SyncVoiceMorphingDescription();
     }
     control->setValue(plain_value);
+    SyncVoiceMorphingSliders();
   } else {
     control->setValue(plain_value);
   }
@@ -410,7 +415,7 @@ void Editor::SyncModelDescription() {
     }
 
     if (voice_counter > 1) {
-      const auto flags = model_config_->model.VersionInt() <= 1
+      const auto flags = model_config_->model.VersionInt() <= 2
                              ? VSTGUI::CMenuItem::kNoFlags
                              : VSTGUI::CMenuItem::kDisabled;
       voice_combobox->addEntry("Voice Morphing Mode", -1, flags);
@@ -425,11 +430,13 @@ void Editor::SyncModelDescription() {
       auto* const label = morphing_labels_[i];
       if (i < voice_counter) {
         slider->setVisible(true);
+        slider->SetEnabled(true);
         label->setVisible(true);
         label->setText(reinterpret_cast<const char*>(
             model_config_->voices[i].name.c_str()));
       } else {
         slider->setVisible(false);
+        slider->SetEnabled(false);
         label->setVisible(false);
         label->setText("");
       }
@@ -459,6 +466,7 @@ void Editor::SyncModelDescription() {
       // model_voice_description_->SetVoiceDescription(u8"< Voice Morphing Mode
       // >");
       SyncVoiceMorphingDescription();
+      SyncVoiceMorphingSliders();
       tab_view_->selectTab(1);
     }
     model_voice_description_->SetModelDescription(
@@ -1000,7 +1008,8 @@ void Editor::SyncVoiceMorphingDescription() {
     if (morphing_labels_[i]->isVisible()) {
       auto control =
           controls_.at(static_cast<int>(ParameterID::kVoiceMorphWeights) + i);
-      if (control->getValue() > 0.0) {
+      if (control->getValue() >=
+          (0.01f - std::numeric_limits<float>::epsilon())) {
         str += model_config_->voices[i].name;
         str += u8"\n";
         str += model_config_->voices[i].description;
@@ -1011,6 +1020,57 @@ void Editor::SyncVoiceMorphingDescription() {
     }
   }
   model_voice_description_->SetVoiceDescription(str);
+}
+
+void Editor::SyncVoiceMorphingSliders() {
+  if (model_config_ && model_config_->model.VersionInt() >= 2) {
+    int non_zero_count = 0;
+    auto f_set_zero = [this](Slider* slider) {
+      slider->setValue(0.0f);
+      slider->setDirty();
+    };
+
+    for (int i = 0; i < common::kMaxNSpeakers; ++i) {
+      auto* const slider =
+          static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+              static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+
+      // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
+      // 挙動が見られたため、その場合のケア
+      // 閾値はスライダーの段階依存なので、スライダーの段階に応じた適切な値を設定する
+      if (slider->getValue() >=
+          (0.01f - std::numeric_limits<float>::epsilon())) {
+        ++non_zero_count;
+      } else {
+        f_set_zero(slider);
+      }
+    }
+
+    if (non_zero_count < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
+      // 非ゼロの重みの数が上限を下回っていた場合はすべてのスライダーを有効化する
+      for (int i = 0; i < common::kMaxNSpeakers; ++i) {
+        auto* const slider =
+            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+                static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+        slider->SetEnabled(true);
+      }
+    } else {
+      // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
+      // GUI経由でそれ以上非ゼロの重みが増えないようにする
+      // (DAW側からは変化しうるので、非ゼロの重みが増えることはある)
+      for (int i = 0; i < common::kMaxNSpeakers; ++i) {
+        auto* const slider =
+            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+                static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+        if (slider->getValue() >=
+            (0.01f - std::numeric_limits<float>::epsilon())) {
+          slider->SetEnabled(true);
+        } else {
+          slider->SetEnabled(false);
+        }
+      }
+    }
+  }
 }
 
 }  // namespace beatrice::vst
