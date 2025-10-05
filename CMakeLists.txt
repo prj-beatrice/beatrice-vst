@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(major_version 2)
 set(minor_version 0)
 set(patch_version 0)
-set(prerelease_version "-rc.0")
+set(prerelease_version "-rc.1")
 execute_process(
     COMMAND git rev-parse --short HEAD
     OUTPUT_VARIABLE GIT_HASH
