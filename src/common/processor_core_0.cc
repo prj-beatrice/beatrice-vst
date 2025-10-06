@@ -3,6 +3,7 @@
 #include "common/processor_core_0.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 
@@ -11,6 +12,10 @@
 namespace beatrice::common {
 
 auto ProcessorCore0::GetVersion() const -> int { return 0; }
+auto ProcessorCore0::GetLatencySamples() const -> int {
+  const auto sr = any_freq_in_out_.GetSampleRate();
+  return static_cast<int>(std::round(((0.0375 + 16.0 / 48000.0) * sr + 16.0)));
+}
 auto ProcessorCore0::Process(const float* const input, float* const output,
                              const int n_samples) -> ErrorCode {
   const auto fill_zero = [output, n_samples] {
