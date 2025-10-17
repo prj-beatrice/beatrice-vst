@@ -244,10 +244,10 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
     auto* const voice_control =
         controls_.at(static_cast<int>(ParameterID::kVoice));
     const auto voice_id = voice_control->getValue();
+    control->setValue(plain_value);
     if (voice_id > 0 && voice_id == static_cast<int>(voice_control->getMax())) {
       SyncVoiceMorphingDescription();
     }
-    control->setValue(plain_value);
     SyncVoiceMorphingSliders();
   } else {
     control->setValue(plain_value);

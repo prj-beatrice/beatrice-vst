@@ -426,6 +426,7 @@ class ModelVoiceDescription : public VSTGUI::CScrollView {
     voice_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
     voice_description_->setTextInset(CPoint(0, 2));
     addView(voice_description_);
+
     AdjustVoiceDescriptionPosition();
   }
 
@@ -474,6 +475,10 @@ class ModelVoiceDescription : public VSTGUI::CScrollView {
   friend class Editor;
 
   void AdjustVoiceDescriptionPosition() {
+    auto vsb = getVerticalScrollbar();
+    const auto prev_scroll_pos = vsb->getValue();
+    resetScrollOffset();
+
     auto y =
         model_description_->getText() == nullptr
             ? 0
@@ -488,6 +493,12 @@ class ModelVoiceDescription : public VSTGUI::CScrollView {
     auto container_size = getContainerSize();
     container_size.setHeight(y);
     setContainerSize(container_size);
+
+    vsb->setValue(prev_scroll_pos);
+    vsb->bounceValue();
+    vsb->onVisualChange();
+    vsb->invalid();
+    valueChanged(vsb);
 
     setDirty();
     Invalid();
