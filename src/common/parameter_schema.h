@@ -227,10 +227,13 @@ class ParameterSchema {
                     const ParameterVariant& parameter) {
     parameters_.insert({param_id, parameter});
   }
-  [[nodiscard]] auto GetParameter(const ParameterID param_id) const
-      -> const ParameterVariant& {
-    return parameters_.at(param_id);
-  }
+	  [[nodiscard]] auto GetParameter(const ParameterID param_id) const
+	      -> const ParameterVariant& {
+	    return parameters_.at(param_id);
+	  }
+	  [[nodiscard]] auto Contains(const ParameterID param_id) const -> bool {
+	    return parameters_.contains(param_id);
+	  }
   // NOLINTBEGIN(readability-identifier-naming)
   [[nodiscard]] auto begin() const { return parameters_.begin(); }
   [[nodiscard]] auto end() const { return parameters_.end(); }

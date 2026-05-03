@@ -119,9 +119,12 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
           kResultTrue) {
         continue;
       }
-      unreflected_params_[param_queue->getParameterId()] = value;
-    }
-  }
+	      const auto param_id = param_queue->getParameterId();
+	      if (param_id < unreflected_params_.size()) {
+	        unreflected_params_[param_id] = value;
+	      }
+	    }
+	  }
 
   std::unique_lock<std::mutex> lock(mtx_, std::try_to_lock);
   // ファイルの読み込み中はパラメータ変更の処理を先送りにし、
@@ -137,11 +140,22 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
     return kResultTrue;
   }
 
-  for (const auto [vst_param_id, value] : unreflected_params_) {
-    const auto param_id = static_cast<common::ParameterID>(vst_param_id);
-    const auto& param = common::kSchema.GetParameter(param_id);
-    if (const auto* const num_param =
-            std::get_if<common::NumberParameter>(&param)) {
+	  for (size_t vst_param_id = 0; vst_param_id < unreflected_params_.size();
+	       ++vst_param_id) {
+	    const auto maybe_value = unreflected_params_[vst_param_id];
+	    if (!maybe_value.has_value()) {
+	      continue;
+	    }
+	    unreflected_params_[vst_param_id].reset();
+
+	    const auto value = *maybe_value;
+	    const auto param_id = static_cast<common::ParameterID>(vst_param_id);
+	    if (!common::kSchema.Contains(param_id)) {
+	      continue;
+	    }
+	    const auto& param = common::kSchema.GetParameter(param_id);
+	    if (const auto* const num_param =
+	            std::get_if<common::NumberParameter>(&param)) {
       const auto denormalized_value = Denormalize(*num_param, value);
       const auto error_code =
           vc_core_.SetParameter(param_id, denormalized_value);
@@ -153,10 +167,9 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
       const auto denormalized_value = Denormalize(*list_param, value);
       const auto error_code =
           vc_core_.SetParameter(param_id, denormalized_value);
-      assert(error_code == common::ErrorCode::kSuccess);
-    }
-  }
-  unreflected_params_.clear();
+	      assert(error_code == common::ErrorCode::kSuccess);
+	    }
+	  }
 
   if (data.numInputs == 0 || data.numOutputs == 0 || data.numSamples == 0) {
     // 何もしない

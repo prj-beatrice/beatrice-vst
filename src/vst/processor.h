@@ -3,7 +3,9 @@
 #ifndef BEATRICE_VST_PROCESSOR_H_
 #define BEATRICE_VST_PROCESSOR_H_
 
-#include <map>
+#include <array>
+#include <cstddef>
+#include <optional>
 #include <mutex>  // NOLINT(build/c++11)
 
 #include "vst3sdk/pluginterfaces/base/ibstream.h"
@@ -53,11 +55,13 @@ class Processor : public Steinberg::Vst::AudioEffect {
   }
 
  private:
-  std::mutex mtx_;
-  common::ProcessorProxy vc_core_;
-  // メモリ確保が挟まるのが望ましくないが……
-  std::map<ParamID, ParamValue> unreflected_params_;
-};
+	  std::mutex mtx_;
+	  common::ProcessorProxy vc_core_;
+	  static constexpr auto kUnreflectedParamCount =
+	      static_cast<size_t>(common::ParameterID::kSentinel);
+	  std::array<std::optional<ParamValue>, kUnreflectedParamCount>
+	      unreflected_params_;
+	};
 
 }  // namespace beatrice::vst
 

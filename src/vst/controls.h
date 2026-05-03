@@ -305,7 +305,15 @@ class FileSelector : public CTextLabel {
           CNewFileSelector::create(getFrame(), CNewFileSelector::kSelectFile);
       if (selector) {
         selector->addFileExtension(CFileExtension("TOML", "toml"));
-        selector->run(this);  // notify に送られる
+        const auto did_run = selector->run(
+            [self = VSTGUI::shared(this)](CNewFileSelector* selector) {
+              if (selector) {
+                self->ApplySelectedFile(*selector);
+              }
+            });
+        if (!did_run) {
+          selector->forget();
+        }
         selector->forget();
       }
       return VSTGUI::kMouseEventHandled;
@@ -316,19 +324,8 @@ class FileSelector : public CTextLabel {
   auto notify(CBaseObject* sender, const char* message)
       -> CMessageResult override {
     if (std::strcmp(message, CNewFileSelector::kSelectEndMessage) == 0) {
-      // ファイルパスを取得
       auto* const selector = static_cast<CNewFileSelector*>(sender);
-      if (const auto* const file_char = selector->getSelectedFile(0)) {
-        const auto file_u8string =
-            std::u8string(file_char, file_char + std::strlen(file_char));
-        const auto file = std::filesystem::path(file_u8string);
-        if (std::filesystem::exists(file) &&
-            std::filesystem::is_regular_file(file)) {
-          SetPath(file);
-          // Editor に通知
-          valueChanged();
-        }
-      }
+      ApplySelectedFile(*selector);
       return kMessageNotified;
     }
     return CTextLabel::notify(sender, message);
@@ -344,6 +341,19 @@ class FileSelector : public CTextLabel {
   auto GetPath() const -> const std::filesystem::path& { return file_; }
 
  private:
+  void ApplySelectedFile(const CNewFileSelector& selector) {
+    if (const auto* const file_char = selector.getSelectedFile(0)) {
+      const auto file_u8string =
+          std::u8string(file_char, file_char + std::strlen(file_char));
+      const auto file = std::filesystem::path(file_u8string);
+      if (std::filesystem::exists(file) &&
+          std::filesystem::is_regular_file(file)) {
+        SetPath(file);
+        valueChanged();
+      }
+    }
+  }
+
   std::filesystem::path file_;
 };
 

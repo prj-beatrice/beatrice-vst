@@ -360,7 +360,9 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kVQNumNeighbors,
        NumberParameter(
-           u8"VQ Neighbor Count"s, 0.0, 0.0, 8.0, u8""s, 8, u8"VQNbr"s,
+           u8"VQ Neighbor Count"s, static_cast<double>(kMaxVQNumNeighbors), 0.0,
+           static_cast<double>(kMaxVQNumNeighbors), u8""s, kMaxVQNumNeighbors,
+           u8"VQNbr"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
            [](ProcessorProxy& vc, const double value) {

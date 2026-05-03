@@ -53,10 +53,11 @@ class Buffer {
   Buffer() = default;
   explicit Buffer(const int siz) { SetSize(siz); }
 
-  void SetSize(const int new_siz) {
-    siz_ = new_siz;
-    data_.resize(new_siz);
-  }
+	  void SetSize(const int new_siz) {
+	    siz_ = new_siz;
+	    data_.resize(new_siz);
+	    data_.reserve(new_siz * 2);
+	  }
 
   void Push(const float value) {
     if (static_cast<int>(data_.size()) >= siz_ * 2) {
@@ -275,9 +276,12 @@ class DownUpSamplerImpl {
 template <class Func>
 class ConvertStreamFunctionFrequency {
   Func function_;
-  double original_frequency_;
-  double target_frequency_;
-  DownUpSamplerImpl down_up_sampler_;
+	  double original_frequency_;
+	  double target_frequency_;
+	  DownUpSamplerImpl down_up_sampler_;
+	  std::vector<float> tmp_vector_;
+	  std::vector<float> converted_input_;
+	  std::vector<float> converted_output_;
 
  public:
   ConvertStreamFunctionFrequency(Func&& function,
@@ -293,23 +297,21 @@ class ConvertStreamFunctionFrequency {
                          normalized_cutoff_freq_in,
                          normalized_cutoff_freq_out) {}
 
-  // input == output であってもよい
-  template <class... Context>
-  auto operator()(const float* const input, float* const output, const int m,
-                  Context&&... context) {
-    auto tmp_vector = std::vector<float>(input, input + m);
-    auto converted_input = std::vector<float>();
-    down_up_sampler_.ResampleIn(tmp_vector, converted_input);
+	  // input == output であってもよい
+	  template <class... Context>
+	  auto operator()(const float* const input, float* const output, const int m,
+	                  Context&&... context) {
+	    tmp_vector_.assign(input, input + m);
+	    down_up_sampler_.ResampleIn(tmp_vector_, converted_input_);
 
-    const auto n = static_cast<int>(converted_input.size());
-    auto converted_output = std::vector<float>(n);
-    function_(std::to_address(converted_input.begin()),
-              std::to_address(converted_output.begin()), n,
-              std::forward<Context>(context)...);
+	    const auto n = static_cast<int>(converted_input_.size());
+	    converted_output_.resize(n);
+	    function_(converted_input_.data(), converted_output_.data(), n,
+	              std::forward<Context>(context)...);
 
-    down_up_sampler_.ResampleOut(converted_output, tmp_vector);
-    std::memcpy(output, std::to_address(tmp_vector.begin()), m * sizeof(float));
-  }
+	    down_up_sampler_.ResampleOut(converted_output_, tmp_vector_);
+	    std::memcpy(output, tmp_vector_.data(), m * sizeof(float));
+	  }
 
   [[nodiscard]] auto IsReady() const -> bool {
     return down_up_sampler_.IsReady();

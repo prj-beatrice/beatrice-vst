@@ -559,7 +559,8 @@ auto ProcessorCore2::SetMaxSourcePitch(const double new_max_source_pitch)
 
 auto ProcessorCore2::SetVQNumNeighbors(const int new_vq_num_neighbors)
     -> ErrorCode {
-  vq_num_neighbors_ = std::clamp(new_vq_num_neighbors, 0, 8);
+  vq_num_neighbors_ =
+      std::clamp(new_vq_num_neighbors, 0, kMaxVQNumNeighbors);
   Beatrice20rc0_SetVQNumNeighbors(phone_context_, vq_num_neighbors_);
   return ErrorCode::kSuccess;
 }

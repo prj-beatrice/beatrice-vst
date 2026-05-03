@@ -48,7 +48,14 @@ class AlignedAllocator {
 
     // allocate aligned memory at N-byte boundaries
     // note that size must be a multiple of N
+#if defined(_MSC_VER)
     void* ptr = _aligned_malloc(size, N);
+#else
+    void* ptr = nullptr;
+    if (posix_memalign(&ptr, N, size) != 0) {
+      ptr = nullptr;
+    }
+#endif
     // throw an exception if memory allocation fails
     if (ptr == nullptr) {
       throw std::bad_alloc();
@@ -57,7 +64,13 @@ class AlignedAllocator {
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
-  void deallocate(T* ptr, std::size_t) noexcept { _aligned_free(ptr); }
+  void deallocate(T* ptr, std::size_t) noexcept {
+#if defined(_MSC_VER)
+    _aligned_free(ptr);
+#else
+    std::free(ptr);
+#endif
+  }
 
   template <class U>
   // NOLINTNEXTLINE(readability-identifier-naming)

@@ -8,6 +8,8 @@
 
 namespace beatrice::common {
 
+inline constexpr int kMaxVQNumNeighbors = 30;
+
 // 任意のサンプリング周波数と任意のブロックサイズで
 // Beatrice の推論を行う、ミニマルな信号処理クラス。
 // 1 つの子クラスは 1 つのモデルバージョンに対応する。
