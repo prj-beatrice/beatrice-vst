@@ -21,6 +21,7 @@
 
 #include "vst/editor.h"
 
+#include <memory>
 #include <algorithm>
 #include <array>
 #include <cassert>
