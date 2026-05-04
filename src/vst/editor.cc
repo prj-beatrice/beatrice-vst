@@ -467,7 +467,20 @@ void Editor::SyncModelDescription() {
   voice_combobox->removeAllEntry();
 
   if (voice_buttons_view_) {
-    voice_buttons_view_->removeAll(true);
+    // Snapshot切替などで、Voice数が多いモデルから少ないモデルへ変わる場合、
+    // CScrollView::removeAll(true) だけでは古いVoiceButtonが描画上残ることがある。
+    // 追加済みのVoiceButtonをポインタで明示的に外してから、スクロール領域も初期化する。
+    for (auto* const button : voice_buttons_) {
+      if (button) {
+        voice_buttons_view_->removeView(button, true);
+      }
+    }
+
+    auto container_size = voice_buttons_view_->getContainerSize();
+    container_size.setHeight(0);
+    voice_buttons_view_->setContainerSize(container_size);
+    voice_buttons_view_->resetScrollOffset();
+    voice_buttons_view_->invalid();
   }
 
   voice_buttons_.clear();
@@ -637,6 +650,7 @@ void Editor::SyncModelDescription() {
 
       voice_buttons_view_->setContainerSize(container_size);
       voice_buttons_view_->setDirty();
+      voice_buttons_view_->invalid();
     }
 
     for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
