@@ -265,6 +265,66 @@ auto PLUGIN_API Processor::getState(IBStream* const state) -> tresult {
 
 auto PLUGIN_API Processor::notify(IMessage* const message) -> tresult {
   const auto* const message_id = message->getMessageID();
+
+    if (std::strcmp(message_id, "plain_param_change") == 0) {
+    std::lock_guard lock(mtx_);
+
+    uint32 siz;
+    const void* data;
+
+    if (message->getAttributes()->getBinary("param_id", data, siz) !=
+        kResultTrue) {
+      return kResultFalse;
+    }
+
+    if (siz != sizeof(ParamID)) {
+      return kResultFalse;
+    }
+
+    ParamID vst_param_id;
+    std::memcpy(&vst_param_id, data, sizeof(vst_param_id));
+
+    const auto param_id = static_cast<ParameterID>(vst_param_id);
+
+    const auto& param = common::kSchema.GetParameter(param_id);
+
+    if (message->getAttributes()->getBinary("data", data, siz) !=
+        kResultTrue) {
+      return kResultFalse;
+    }
+
+    if (std::get_if<common::NumberParameter>(&param)) {
+      if (siz != sizeof(double)) {
+        return kResultFalse;
+      }
+
+      double value;
+      std::memcpy(&value, data, sizeof(value));
+
+      const auto error_code = vc_core_.SetParameter(param_id, value);
+
+      assert(error_code == common::ErrorCode::kSuccess);
+
+      return kResultTrue;
+
+    } else if (std::get_if<common::ListParameter>(&param)) {
+      if (siz != sizeof(int)) {
+        return kResultFalse;
+      }
+
+      int value;
+      std::memcpy(&value, data, sizeof(value));
+
+      const auto error_code = vc_core_.SetParameter(param_id, value);
+
+      assert(error_code == common::ErrorCode::kSuccess);
+
+      return kResultTrue;
+    }
+
+    return kResultFalse;
+  }
+
   if (std::strcmp(message_id, "param_change") == 0) {
     std::lock_guard<std::mutex> lock(mtx_);
     uint32 siz;
