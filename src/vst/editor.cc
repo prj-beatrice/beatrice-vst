@@ -182,8 +182,6 @@ auto PLUGIN_API Editor::open(void* const parent,
   MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0,
              1.0f, 1.0f);
 
-  MakeModelVoiceDescription(context);
-
   EndGroup(context);
 
   BeginGroup(context, u8"General");
@@ -231,7 +229,7 @@ auto PLUGIN_API Editor::open(void* const parent,
 
   MakePortraitView(context);
 
-  MakePortraitDescription(context);
+  MakeModelVoiceDescription(context);
 
   EndTabColumn(context);
 
@@ -309,7 +307,9 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
 
     if (!model_config_.has_value()) {
       portrait_view_->setBackground(nullptr);
-      portrait_description_->setText("");
+      if (portrait_description_) {
+        portrait_description_->setText("");
+      }
 
       tab_view_->selectTab(0);
 
@@ -318,8 +318,10 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       portrait_view_->setBackground(
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
 
-      portrait_description_->setText(reinterpret_cast<const char*>(
-          model_config_->voices[voice_id].portrait.description.c_str()));
+      if (portrait_description_) {
+        portrait_description_->setText(reinterpret_cast<const char*>(
+            model_config_->voices[voice_id].portrait.description.c_str()));
+      }
 
       model_voice_description_->SetVoiceDescription(
           model_config_->voices[voice_id].description);
@@ -328,7 +330,9 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
     } else {
       portrait_view_->setBackground(nullptr);
 
-      portrait_description_->setText("");
+      if (portrait_description_) {
+        portrait_description_->setText("");
+      }
 
       // model_voice_description_->SetVoiceDescription(
       //     u8"< Voice Morphing Mode >");
@@ -532,7 +536,7 @@ void Editor::SyncModelDescription() {
 
         auto* const button = new VoiceButton(
             CRect(0, y, kElementWidth, y + kElementHeight), this,
-            900000 + voice_id, voice_id);
+            static_cast<int>(ParameterID::kVoice), voice_id);
 
         button->setText(reinterpret_cast<const char*>(voice.name.c_str()));
         button->setFont(font_);
@@ -679,8 +683,10 @@ void Editor::SyncModelDescription() {
 
       portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
 
-      portrait_description_->setText(
-          reinterpret_cast<const char*>(voice.portrait.description.c_str()));
+      if (portrait_description_) {
+        portrait_description_->setText(
+            reinterpret_cast<const char*>(voice.portrait.description.c_str()));
+      }
 
       model_voice_description_->SetVoiceDescription(voice.description);
 
@@ -689,7 +695,9 @@ void Editor::SyncModelDescription() {
     } else {
       portrait_view_->setBackground(nullptr);
 
-      portrait_description_->setText("");
+      if (portrait_description_) {
+        portrait_description_->setText("");
+      }
 
       // model_voice_description_->SetVoiceDescription(
       //     u8"< Voice Morphing Mode >");
@@ -704,7 +712,9 @@ void Editor::SyncModelDescription() {
     model_voice_description_->SetModelDescription(model_config_->model.description);
 
     portrait_view_->setDirty();
-    portrait_description_->setDirty();
+    if (portrait_description_) {
+      portrait_description_->setDirty();
+    }
 
     RefreshVoiceButtonsSelection();
 
@@ -758,21 +768,23 @@ void Editor::valueChanged(CControl* const pControl) {
 
     const auto voice_param_id = ParameterID::kVoice;
 
+    const auto plain_value = voice_button->GetVoiceId();
+
+    auto* const hidden_voice_control = controls_.at(voice_vst_param_id);
+
+    if (static_cast<int>(std::round(hidden_voice_control->getValue())) ==
+        plain_value) {
+      RefreshVoiceButtonsSelection();
+
+      return;
+    }
+
     const auto& voice_param = common::kSchema.GetParameter(voice_param_id);
 
     const auto* const list_param =
         std::get_if<common::ListParameter>(&voice_param);
 
     assert(list_param);
-
-    const auto plain_value = voice_button->GetVoiceId();
-
-    if (plain_value ==
-        std::get<int>(core.parameter_state_.GetValue(voice_param_id))) {
-      RefreshVoiceButtonsSelection();
-
-      return;
-    }
 
     const auto normalized_value = Normalize(*list_param, plain_value);
 
@@ -785,6 +797,9 @@ void Editor::valueChanged(CControl* const pControl) {
     }
 
     assert(error_code == common::ErrorCode::kSuccess);
+
+    hidden_voice_control->setValue(static_cast<float>(plain_value));
+    hidden_voice_control->setDirty();
 
     communicate(voice_vst_param_id, normalized_value);
 

@@ -351,14 +351,14 @@ class VoiceButton : public CTextLabel {
  public:
   VoiceButton(const CRect& size, IControlListener* listener, int32_t tag,
               int voice_id)
-      : CTextLabel(size, "", nullptr, CParamDisplay::kNoFrame),
+      : CTextLabel(size, "", nullptr, 0),
         voice_id_(voice_id) {
     setTag(tag);
     setListener(listener);
     setValue(static_cast<float>(voice_id_));
     setMouseEnabled(true);
     setWantsFocus(true);
-    setBackColor(kTransparentCColor);
+    setBackColor(kDarkColorScheme.surface_2);
     setFrameColor(kDarkColorScheme.outline);
     setFontColor(kDarkColorScheme.on_surface);
     setHoriAlign(CHoriTxtAlign::kCenterText);
@@ -373,7 +373,7 @@ class VoiceButton : public CTextLabel {
       setFontColor(kDarkColorScheme.on_primary);
       setFrameColor(kDarkColorScheme.primary);
     } else {
-      setBackColor(kTransparentCColor);
+      setBackColor(kDarkColorScheme.surface_2);
       setFontColor(kDarkColorScheme.on_surface);
       setFrameColor(kDarkColorScheme.outline);
     }
