@@ -42,23 +42,42 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
 
  private:
   static constexpr auto kHeaderHeight = 56;
+
   static constexpr auto kFooterHeight = 32;
+
   static constexpr auto kColumnMerginY = 0;
+
   static constexpr auto kColumnMerginX = 1;
-  static constexpr auto kColumnMerginX = 1;
+
   static constexpr auto kVoiceColumnWidth = 316 - kColumnMerginX;
+
   static constexpr auto kColumnWidth = 390 - kColumnMerginX;
+
+  static constexpr auto kInnerColumnMerginY = 12;
+
+  static constexpr auto kInnerColumnMerginX = 12;
+
+  static constexpr auto kGroupLabelMerginY = 12;
+
+  static constexpr auto kGroupIndentX = 4;
+
+  static constexpr auto kElementWidth = 224;
+
+  static constexpr auto kElementHeight = 24;
+
+  static constexpr auto kElementMerginY = 8;
+
+  static constexpr auto kElementMerginX = 8;
+
+  static constexpr auto kLabelWidth =
+      kColumnWidth - 2 * (kInnerColumnMerginX + kGroupIndentX) -
+      kElementWidth - kElementMerginX;
+
   static constexpr auto kPortraitColumnWidth =
       kWindowWidth - kVoiceColumnWidth - kColumnWidth - 2 * kColumnMerginX;
-  static constexpr auto kInnerColumnMerginX = 16;
-  static constexpr auto kInnerColumnMerginY = 16;
-  static constexpr auto kElementWidth = 224;
-  static constexpr auto kElementHeight = 24;
-  static constexpr auto kElementMerginX = 8;
-  static constexpr auto kElementMerginY = 8;
-  static constexpr auto kLabelWidth =
-      kColumnWidth - kInnerColumnMerginX - kElementWidth - kElementMerginX;
+
   static constexpr auto kPortraitWidth = kPortraitColumnWidth;
+
   static constexpr auto kPortraitHeight = kPortraitWidth;
   struct Context {
     int y = kHeaderHeight + kColumnMerginY;
