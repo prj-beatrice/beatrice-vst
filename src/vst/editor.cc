@@ -766,27 +766,73 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto voice_vst_param_id =
         static_cast<ParamID>(ParameterID::kVoice);
 
+    const auto voice_param_id = ParameterID::kVoice;
+
     const auto plain_value = voice_button->GetVoiceId();
 
     auto* const hidden_voice_control = controls_.at(voice_vst_param_id);
 
-    if (static_cast<int>(std::round(hidden_voice_control->getValue())) ==
-        plain_value) {
-      RefreshVoiceButtonsSelection();
+    const auto& voice_param = common::kSchema.GetParameter(voice_param_id);
 
-      return;
+    const auto* const list_param =
+        std::get_if<common::ListParameter>(&voice_param);
+
+    assert(list_param);
+
+    const auto normalized_value = Normalize(*list_param, plain_value);
+
+    const auto error_code =
+        list_param->ControllerSetValue(core, plain_value);
+
+    if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
+      model_voice_description_->SetVoiceDescription(
+          u8"Error: Speaker ID out of range.");
     }
 
-    // VoiceButton は表示用の独自UIなので、音声処理へ確実に反映するため、
-    // 値の適用は既存の COptionMenu(kVoice) 処理へ渡す。
-    // これにより、ControllerSetValue / performEdit / 連動パラメータ処理を
-    // 既存の Voice プルダウンと同じ経路で実行できる。
+    assert(error_code == common::ErrorCode::kSuccess);
+
     hidden_voice_control->setValue(static_cast<float>(plain_value));
     hidden_voice_control->setDirty();
 
-    valueChanged(hidden_voice_control);
+    // Voice 本体を必ずホスト/Processorへ通知する。
+    // 同じ値に見える場合でも、Processor側のTargetSpeakerが未反映のことがあるため、
+    // 早期returnせず毎回performEditまで通す。
+    communicate(voice_vst_param_id, normalized_value);
 
-    // 画像・説明文・ボタン選択状態は即時更新する。
+    // Voice変更に連動して変わるPitchShift / AverageSourcePitch等も、
+    // 既存パラメータと同じ方法でホストへ通知する。
+    for (const auto& changed_param_id : core.updated_parameters_) {
+      const auto changed_vst_param_id = static_cast<ParamID>(changed_param_id);
+
+      const auto& value = core.parameter_state_.GetValue(changed_param_id);
+
+      const auto& changed_param =
+          common::kSchema.GetParameter(changed_param_id);
+
+      if (const auto* const num_param =
+              std::get_if<common::NumberParameter>(&changed_param)) {
+        const auto changed_normalized_value =
+            Normalize(*num_param, std::get<double>(value));
+
+        communicate(changed_vst_param_id, changed_normalized_value);
+
+      } else if (const auto* const changed_list_param =
+                     std::get_if<common::ListParameter>(&changed_param)) {
+        const auto changed_normalized_value =
+            Normalize(*changed_list_param, std::get<int>(value));
+
+        communicate(changed_vst_param_id, changed_normalized_value);
+
+      } else if (std::get_if<common::StringParameter>(&changed_param)) {
+        assert(false);
+
+      } else {
+        assert(false);
+      }
+    }
+
+    core.updated_parameters_.clear();
+
     SyncValue(voice_vst_param_id, static_cast<float>(plain_value));
 
     return;
