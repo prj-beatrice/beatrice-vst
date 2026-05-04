@@ -266,8 +266,8 @@ auto PLUGIN_API Processor::getState(IBStream* const state) -> tresult {
 auto PLUGIN_API Processor::notify(IMessage* const message) -> tresult {
   const auto* const message_id = message->getMessageID();
 
-    if (std::strcmp(message_id, "plain_param_change") == 0) {
-    std::lock_guard lock(mtx_);
+  if (std::strcmp(message_id, "plain_param_change") == 0) {
+    std::lock_guard<std::mutex> lock(mtx_);
 
     uint32 siz;
     const void* data;
@@ -284,7 +284,7 @@ auto PLUGIN_API Processor::notify(IMessage* const message) -> tresult {
     ParamID vst_param_id;
     std::memcpy(&vst_param_id, data, sizeof(vst_param_id));
 
-    const auto param_id = static_cast<ParameterID>(vst_param_id);
+    const auto param_id = static_cast<common::ParameterID>(vst_param_id);
 
     const auto& param = common::kSchema.GetParameter(param_id);
 
