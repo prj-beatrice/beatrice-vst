@@ -383,7 +383,10 @@ void Editor::SyncStringValue(const ParamID param_id,
     SyncParameterAvailability();
 
   } else {
-    control->setText(reinterpret_cast<const char*>(value.c_str()));
+    auto* const text_control = dynamic_cast<CTextLabel*>(control);
+    assert(text_control);
+
+    text_control->setText(reinterpret_cast<const char*>(value.c_str()));
   }
 }
 
@@ -807,7 +810,7 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto plain_value = control->getValue();
 
     if (plain_value ==
-        std::get<float>(core.parameter_state_.GetValue(param_id))) {
+        std::get<double>(core.parameter_state_.GetValue(param_id))) {
       return;
     }
 
@@ -902,7 +905,7 @@ void Editor::valueChanged(CControl* const pControl) {
     if (const auto* const num_param =
             std::get_if<common::NumberParameter>(&changed_param)) {
       const auto normalized_value =
-          Normalize(*num_param, std::get<float>(value));
+          Normalize(*num_param, std::get<double>(value));
 
       communicate(changed_vst_param_id, normalized_value);
 
@@ -1073,7 +1076,7 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
 
   auto* const param =
-      static_cast<Parameter*>(controller->getParameterObject(param_id));
+      static_cast<LinearParameter*>(controller->getParameterObject(param_id));
 
   auto* const slider_bmp =
       new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
@@ -1261,8 +1264,12 @@ auto Editor::MakeFileSelector(Context& context, ParamID vst_param_id) -> CView* 
   control->setFontColor(kDarkColorScheme.on_surface);
   control->setHoriAlign(CHoriTxtAlign::kCenterText);
 
-  control->SetPath(std::get<std::u8string>(
-      controller->core_.parameter_state_.GetValue(param_id)));
+  const auto& path_value = std::get<std::unique_ptr<std::u8string>>(
+      controller->core_.parameter_state_.GetValue(param_id));
+
+  if (path_value) {
+    control->SetPath(std::filesystem::path(*path_value));
+  }
 
   context.column_elements.push_back(control);
 
@@ -1466,7 +1473,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
     auto const param_id = static_cast<ParamID>(vst_param_id);
 
     auto* const param =
-        static_cast<Parameter*>(controller->getParameterObject(param_id));
+        static_cast<LinearParameter*>(controller->getParameterObject(param_id));
 
     auto* const slider_control = new Slider(
         CRect(0, 0, kElementWidth, kElementHeight)
