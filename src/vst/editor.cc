@@ -1,15 +1,35 @@
 // Copyright (c) 2024-2025 Project Beatrice and Contributors
-
-// TODO(refactor)
+// Modified GUI layout draft:
+// - Voice selector is displayed as vertical buttons in the left column.
+// - Model / General / Pitch Shift are moved to the center column.
+// - Portrait remains in the right column.
+//
+// IMPORTANT:
+// This editor.cc assumes you have also applied the matching changes to:
+//   src/vst/controls.h
+//   src/vst/editor.h
+//
+// In particular, controls.h must define VoiceButton, and editor.h must declare:
+//   MakeVoiceButtonsView(Context&)
+//   RefreshVoiceButtonsSelection()
+//   voice_buttons_view_
+//   voice_buttons_
+//   kVoiceColumnWidth
+//
+// This file was prepared as a practical replacement candidate. Run GitHub Actions
+// after committing, and use the compiler log to catch API mismatches.
 
 #include "vst/editor.h"
 
-#include <windows.h>
-
 #include <algorithm>
+#include <array>
+#include <cassert>
+#include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <limits>
-#include <memory>
+#include <string>
+#include <utility>
 
 #include "beatricelib/beatrice.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
@@ -17,6 +37,7 @@
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/coptionmenu.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cscrollview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cviewcontainer.h"
 #include "vst3sdk/vstgui4/vstgui/lib/platform/platformfactory.h"
@@ -42,6 +63,7 @@ using common::ParameterID;
 using Steinberg::ViewRect;
 using Steinberg::Vst::String128;
 using Steinberg::Vst::StringListParameter;
+using VSTGUI::CBitmap;
 using VSTGUI::CFontDesc;
 using VSTGUI::CFrame;
 using VSTGUI::COptionMenu;
@@ -59,6 +81,8 @@ Editor::Editor(void* const controller)
       font_bold_(new CFontDesc("Segoe UI", 14, kBoldFace)),
       font_description_(new CFontDesc("Meiryo", 12)),
       font_version_(new CFontDesc("Segoe UI", 12)),
+      voice_buttons_view_(),
+      voice_buttons_(),
       tab_view_(),
       portrait_view_(),
       portrait_description_(),
@@ -79,7 +103,9 @@ auto PLUGIN_API Editor::open(void* const parent,
   if (frame) {
     return false;
   }
+
   frame = new CFrame(CRect(0, 0, kWindowWidth, kWindowHeight), this);
+
   if (!frame) {
     return false;
   }
@@ -88,8 +114,7 @@ auto PLUGIN_API Editor::open(void* const parent,
   frame->setBackgroundColor(kDarkColorScheme.background);
 
   // ヘッダーを作る
-  auto* const header =
-      new CViewContainer(CRect(0, 0, kWindowWidth, kHeaderHeight));
+  auto* const header = new CViewContainer(CRect(0, 0, kWindowWidth, kHeaderHeight));
   header->setBackgroundColor(kDarkColorScheme.surface_0);
   frame->addView(header);
 
@@ -118,59 +143,110 @@ auto PLUGIN_API Editor::open(void* const parent,
   frame->addView(footer);
 
   auto context = Context();  // オフセット設定
-  BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_1);
-  BeginGroup(context, u8"General");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1, 1.0f,
-             0.1f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1, 1.0f,
-             0.1f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch), 2,
-             1.0f, 0.125f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2,
-             1.0f, 0.125f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2,
-             1.0f, 0.125f);
+
+  // 内部用の Voice コントロール。
+  // 画面には出さないが、既存の ParameterID::kVoice の処理を使うために残す。
+  {
+    auto* const hidden_voice_control = new COptionMenu(
+        CRect(-1000, -1000, -999, -999), this,
+        static_cast<int>(ParameterID::kVoice), nullptr);
+
+    hidden_voice_control->setVisible(false);
+
+    frame->addView(hidden_voice_control);
+
+    controls_.insert(
+        {static_cast<ParamID>(ParameterID::kVoice), hidden_voice_control});
+  }
+
+  // 左列：Voice ボタン一覧
+  BeginColumn(context, kVoiceColumnWidth, kDarkColorScheme.surface_1);
+
+  BeginGroup(context, u8"Voice");
+  MakeVoiceButtonsView(context);
   EndGroup(context);
-  BeginGroup(context, u8"Pitch Shift");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2, 1.0f,
-             0.125f);
-  MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
-               kTransparentCColor, kDarkColorScheme.on_surface);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
-             1, 0.5f, 0.1f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1,
-             0.5f, 0.1f);
-  MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
-               kTransparentCColor, kDarkColorScheme.on_surface);
-  EndGroup(context);
+
   EndColumn(context);
 
+  // 中央列：Model / General / Pitch Shift
   BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_2);
+
   BeginGroup(context, u8"Model");
+
   MakeFileSelector(context, static_cast<ParamID>(ParameterID::kModel));
-  MakeCombobox(context, static_cast<ParamID>(ParameterID::kVoice),
-               kDarkColorScheme.primary, kDarkColorScheme.on_primary);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2, 1.0f,
-             0.5f);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2,
+             1.0f, 0.5f);
+
   MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0,
              1.0f, 1.0f);
+
   MakeModelVoiceDescription(context);
+
   EndGroup(context);
+
+  BeginGroup(context, u8"General");
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1, 1.0f,
+             0.1f);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1, 1.0f,
+             0.1f);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch), 2,
+             1.0f, 0.125f);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2,
+             1.0f, 0.125f);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2,
+             1.0f, 0.125f);
+
+  EndGroup(context);
+
+  BeginGroup(context, u8"Pitch Shift");
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2, 1.0f,
+             0.125f);
+
+  MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
+               kTransparentCColor, kDarkColorScheme.on_surface);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
+             1, 0.5f, 0.1f);
+
+  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1,
+             0.5f, 0.1f);
+
+  MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
+               kTransparentCColor, kDarkColorScheme.on_surface);
+
+  EndGroup(context);
+
   EndColumn(context);
 
+  // 右列：Portrait
   BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
+
   MakePortraitView(context);
+
   MakePortraitDescription(context);
+
   EndTabColumn(context);
 
+  // Voice Morphing タブは既存処理のため残す。
+  // 通常表示上は Portrait タブが選ばれる。
   BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
+
   BeginGroup(context, u8"Voice Morphing Weights");
+
   MakeVoiceMorphingView(context);
+
   EndGroup(context);
+
   EndTabColumn(context);
 
   // 1 要素 1 クラスの方が良かったのか？？？
-
   if (!frame->open(parent)) {
     return false;
   }
@@ -178,7 +254,6 @@ auto PLUGIN_API Editor::open(void* const parent,
   // frame->open で Attach された後でないと
   // テキストに合わせてテキストボックスの位置が変わらない
   SyncModelDescription();
-
   SyncSourcePitchRange();
   SyncParameterAvailability();
 
@@ -188,13 +263,25 @@ auto PLUGIN_API Editor::open(void* const parent,
 void PLUGIN_API Editor::close() {
   if (frame) {
     tab_view_->removeAllTabs();
+
     frame->forget();
+
     frame = nullptr;
+
     model_voice_description_ = nullptr;
+
+    voice_buttons_.clear();
+
+    voice_buttons_view_ = nullptr;
+
     portraits_.clear();
+
     tab_view_ = nullptr;
+
     portrait_view_ = nullptr;
+
     portrait_description_ = nullptr;
+
     morphing_weights_view_ = nullptr;
   }
 }
@@ -208,50 +295,73 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
   if (!frame || !controls_.contains(param_id)) {
     return;
   }
+
   auto* const control = controls_.at(param_id);
+
   const auto vst_param_id = static_cast<int>(param_id);
 
   // Voice は色々ややこしいので特別扱いする
   if (param_id == static_cast<ParamID>(ParameterID::kVoice)) {
     const auto voice_id = static_cast<int>(std::round(plain_value));
+
     control->setValue(plain_value);
+
     if (!model_config_.has_value()) {
       portrait_view_->setBackground(nullptr);
       portrait_description_->setText("");
+
       tab_view_->selectTab(0);
+
     } else if (voice_id == 0 ||
                voice_id < static_cast<int>(control->getMax())) {
       portrait_view_->setBackground(
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
+
       portrait_description_->setText(reinterpret_cast<const char*>(
           model_config_->voices[voice_id].portrait.description.c_str()));
+
       model_voice_description_->SetVoiceDescription(
           model_config_->voices[voice_id].description);
+
       tab_view_->selectTab(0);
     } else {
       portrait_view_->setBackground(nullptr);
+
       portrait_description_->setText("");
+
       // model_voice_description_->SetVoiceDescription(
-      //    u8"< Voice Morphing Mode >");
+      //     u8"< Voice Morphing Mode >");
+
       SyncVoiceMorphingDescription();
+
       SyncVoiceMorphingSliders();
+
       tab_view_->selectTab(1);
     }
+
+    RefreshVoiceButtonsSelection();
+
   } else if (vst_param_id >=
                  static_cast<int>(ParameterID::kVoiceMorphWeights) &&
              vst_param_id < static_cast<int>(ParameterID::kVoiceMorphWeights) +
                                 common::kMaxNSpeakers) {
     auto* const voice_control =
-        controls_.at(static_cast<int>(ParameterID::kVoice));
+        controls_.at(static_cast<ParamID>(ParameterID::kVoice));
+
     const auto voice_id = voice_control->getValue();
+
     control->setValue(plain_value);
-    if (voice_id > 0 && voice_id == static_cast<int>(voice_control->getMax())) {
+
+    if (voice_id > 0 && voice_id == static_cast<float>(voice_control->getMax())) {
       SyncVoiceMorphingDescription();
     }
+
     SyncVoiceMorphingSliders();
+
   } else {
     control->setValue(plain_value);
   }
+
   control->setDirty();
 }
 
@@ -260,13 +370,18 @@ void Editor::SyncStringValue(const ParamID param_id,
   if (!frame || !controls_.contains(param_id)) {
     return;
   }
-  auto* const control = static_cast<CTextLabel*>(controls_.at(param_id));
+
+  auto* const control = controls_.at(param_id);
+
   if (param_id == static_cast<ParamID>(ParameterID::kModel)) {
     auto* const model_selector = static_cast<FileSelector*>(control);
+
     model_selector->SetPath(value);
+
     SyncModelDescription();
     SyncSourcePitchRange();
     SyncParameterAvailability();
+
   } else {
     control->setText(reinterpret_cast<const char*>(value.c_str()));
   }
@@ -278,26 +393,35 @@ void Editor::SyncSourcePitchRange() {
   if (!model_config_.has_value() || model_config_->model.VersionInt() < 0) {
     return;
   }
+
   auto* const min_source_pitch_slider = static_cast<Slider*>(
       controls_.at(static_cast<ParamID>(ParameterID::kMinSourcePitch)));
+
   auto* const max_source_pitch_slider = static_cast<Slider*>(
       controls_.at(static_cast<ParamID>(ParameterID::kMaxSourcePitch)));
+
   // MIDI ノートナンバー
   const auto min_source_pitch = 33.125f;
-  const auto version_to_max_source_pitch = std::array<float, 3>{
+
+  const auto version_to_max_source_pitch = std::array{
       33.0f + (BEATRICE_20A2_PITCH_BINS - 1) *
                   (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE),
       33.0f + (BEATRICE_20B1_PITCH_BINS - 1) *
                   (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE),
       33.0f + (BEATRICE_20RC0_PITCH_BINS - 1) *
                   (12.0f / BEATRICE_PITCH_BINS_PER_OCTAVE)};
-  const auto max_source_pitch = version_to_max_source_pitch[std::min(
-      model_config_->model.VersionInt(),
-      static_cast<int>(version_to_max_source_pitch.size()) - 1)];
+
+  const auto max_source_pitch =
+      version_to_max_source_pitch[std::min(
+          model_config_->model.VersionInt(),
+          static_cast<int>(version_to_max_source_pitch.size()) - 1)];
+
   min_source_pitch_slider->setMin(min_source_pitch);
   max_source_pitch_slider->setMin(min_source_pitch);
+
   min_source_pitch_slider->setMax(max_source_pitch);
   max_source_pitch_slider->setMax(max_source_pitch);
+
   min_source_pitch_slider->setDirty();
   max_source_pitch_slider->setDirty();
 }
@@ -308,109 +432,178 @@ void Editor::SyncParameterAvailability() {
   if (!model_config_.has_value() || model_config_->model.VersionInt() < 0) {
     return;
   }
+
   auto* const vq_num_neighbors_slider = static_cast<Slider*>(
       controls_.at(static_cast<ParamID>(ParameterID::kVQNumNeighbors)));
+
   vq_num_neighbors_slider->SetEnabled(model_config_->model.VersionInt() >= 2);
+
   vq_num_neighbors_slider->setDirty();
 }
 
 // model_selector->getPath() をもとに
 // 話者リスト等を更新する
 void Editor::SyncModelDescription() {
+  auto* const controller = static_cast<Controller*>(getController());
+
   auto* const model_selector = static_cast<FileSelector*>(
       controls_.at(static_cast<ParamID>(ParameterID::kModel)));
+
   auto* const voice_combobox = static_cast<COptionMenu*>(
       controls_.at(static_cast<ParamID>(ParameterID::kVoice)));
+
   const auto file = model_selector->GetPath();
-  model_selector->setText("<unloaded>");
+
+  model_selector->setText("");
+
   voice_combobox->removeAllEntry();
+
+  if (voice_buttons_view_) {
+    voice_buttons_view_->removeAll(true);
+  }
+
+  voice_buttons_.clear();
+
   model_voice_description_->SetModelDescription(u8"");
   model_voice_description_->SetVoiceDescription(u8"");
+
   model_config_ = std::nullopt;
+
   portraits_.clear();
+
   if (file.empty()) {
     // 初期状態
     return;
+
   } else if (!std::filesystem::exists(file) ||
              !std::filesystem::is_regular_file(file)) {
     // ファイルが移動して読み込めない場合の分岐だが、
     // モデルを読み込んだ後に GUI を閉じモデルファイルを移動して
     // 再び GUI を開いた場合などには
     // Processor のみ読み込まれている可能性がある。
-    model_selector->setText("<failed to load>");
+    model_selector->setText("");
+
     model_voice_description_->SetModelDescription(
         u8"Error: The model could not be loaded due to a file move or another "
-        u8"issue. Please reload a valid model.");
+        u8"issue.\n"
+        u8"Please reload a valid model.");
+
     return;
   }
+
   try {
     const auto toml_data = toml::parse(file);
+
     model_config_ = toml::get<common::ModelConfig>(toml_data);
+
     if (model_config_->model.VersionInt() == -1) {
       model_voice_description_->SetModelDescription(
           u8"Error: Unknown model version.");
+
       return;
     }
+
     model_selector->setText(
         reinterpret_cast<const char*>(model_config_->model.name.c_str()));
+
     // 話者のリストを読み込む。
     // また、予め portrait を読み込んで、必要に応じてリサイズしておく。
     int voice_counter = 0;
+
     for (const auto& voice : model_config_->voices) {
       if (voice.name.empty() && voice.description.empty() &&
           voice.portrait.path.empty() && voice.portrait.description.empty()) {
         break;
       }
+
       ++voice_counter;
+
       voice_combobox->addEntry(
           reinterpret_cast<const char*>(voice.name.c_str()));
+
+      if (voice_buttons_view_) {
+        const auto voice_id = voice_counter - 1;
+
+        const auto y = voice_id * (kElementHeight + kElementMerginY);
+
+        auto* const button = new VoiceButton(
+            CRect(0, y, kElementWidth, y + kElementHeight), this,
+            900000 + voice_id, voice_id);
+
+        button->setText(reinterpret_cast<const char*>(voice.name.c_str()));
+        button->setFont(font_);
+        button->SetSelected(false);
+
+        voice_buttons_view_->addView(button);
+        voice_buttons_.push_back(button);
+      }
 
       // portrait
       {
         if (portraits_.contains(voice.portrait.path)) {
           goto load_portrait_succeeded;
         }
+
         const auto portrait_file = file.parent_path() / voice.portrait.path;
+
         if (!std::filesystem::exists(portrait_file) ||
             !std::filesystem::is_regular_file(portrait_file)) {
           goto load_portrait_failed;
         }
+
         const auto platform_bitmap = getPlatformFactory().createBitmapFromPath(
             reinterpret_cast<const char*>(portrait_file.u8string().c_str()));
+
         if (!platform_bitmap) {
           goto load_portrait_failed;
         }
-        const auto original_bitmap =
-            VSTGUI::owned(new CBitmap(platform_bitmap));
+
+        const auto original_bitmap = VSTGUI::owned(new CBitmap(platform_bitmap));
+
         const auto original_size = original_bitmap->getSize();
+
         if (original_size.x == kPortraitWidth &&
             original_size.y == kPortraitHeight) {
           portraits_.insert({voice.portrait.path, original_bitmap});
+
           goto load_portrait_succeeded;
         }
-        const auto scale =
-            VSTGUI::owned(BitmapFilter::Factory::getInstance().createFilter(
+
+        const auto scale = VSTGUI::owned(
+            BitmapFilter::Factory::getInstance().createFilter(
                 BitmapFilter::Standard::kScaleBilinear));
+
         scale->setProperty(BitmapFilter::Standard::Property::kInputBitmap,
                            original_bitmap.get());
+
         scale->setProperty(BitmapFilter::Standard::Property::kOutputRect,
                            CRect(0, 0, kPortraitWidth, kPortraitHeight));
+
         if (!scale->run()) {
           goto load_portrait_failed;
         }
+
         auto* const scaled_bitmap_obj =
             scale->getProperty(BitmapFilter::Standard::Property::kOutputBitmap)
                 .getObject();
+
         auto* const scaled_bitmap = dynamic_cast<CBitmap*>(scaled_bitmap_obj);
+
         if (!scaled_bitmap) {
           goto load_portrait_failed;
         }
+
         portraits_.insert({voice.portrait.path, VSTGUI::shared(scaled_bitmap)});
+
         goto load_portrait_succeeded;
       }
+
       assert(false);
+
     load_portrait_failed:
+
       portraits_.insert({voice.portrait.path, nullptr});
+
     load_portrait_succeeded: {}
     }
 
@@ -418,72 +611,114 @@ void Editor::SyncModelDescription() {
       const auto flags = model_config_->model.VersionInt() <= 2
                              ? VSTGUI::CMenuItem::kNoFlags
                              : VSTGUI::CMenuItem::kDisabled;
+
       voice_combobox->addEntry("Voice Morphing Mode", -1, flags);
+
       portraits_.insert({u8"", nullptr});
     }
 
     voice_combobox->setDirty();
+
+    if (voice_buttons_view_) {
+      auto container_size = voice_buttons_view_->getContainerSize();
+
+      container_size.setHeight(
+          static_cast<int>(voice_buttons_.size()) *
+              (kElementHeight + kElementMerginY) +
+          kElementMerginY);
+
+      voice_buttons_view_->setContainerSize(container_size);
+      voice_buttons_view_->setDirty();
+    }
+
     for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
-      auto* const slider =
-          static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+      auto* const slider = static_cast<Slider*>(
+          controls_.at(static_cast<ParamID>(
               static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+
       auto* const label = morphing_labels_[i];
+
       if (i < voice_counter) {
         slider->setVisible(true);
         slider->SetEnabled(true);
+
         label->setVisible(true);
-        label->setText(reinterpret_cast<const char*>(
-            model_config_->voices[i].name.c_str()));
+        label->setText(
+            reinterpret_cast<const char*>(model_config_->voices[i].name.c_str()));
+
       } else {
         slider->setVisible(false);
         slider->SetEnabled(false);
+
         label->setVisible(false);
         label->setText("");
       }
+
       slider->setDirty();
       label->setDirty();
     }
+
     auto container_size = morphing_weights_view_->getContainerSize();
-    container_size.setHeight(voice_counter *
-                             (kElementHeight + kElementMerginY));
+
+    container_size.setHeight(voice_counter * (kElementHeight + kElementMerginY));
+
     morphing_weights_view_->setContainerSize(container_size);
 
-    const auto voice_id =
-        Denormalize(std::get<common::ListParameter>(
-                        common::kSchema.GetParameter(ParameterID::kVoice)),
-                    controller->getParamNormalized(
-                        static_cast<ParamID>(ParameterID::kVoice)));
+    const auto voice_id = Denormalize(
+        std::get<common::ListParameter>(
+            common::kSchema.GetParameter(ParameterID::kVoice)),
+        controller->getParamNormalized(
+            static_cast<ParamID>(ParameterID::kVoice)));
+
     if (voice_id < voice_counter) {
       const auto& voice = model_config_->voices[voice_id];
+
       portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
+
       portrait_description_->setText(
           reinterpret_cast<const char*>(voice.portrait.description.c_str()));
+
       model_voice_description_->SetVoiceDescription(voice.description);
+
       tab_view_->selectTab(0);
+
     } else {
       portrait_view_->setBackground(nullptr);
+
       portrait_description_->setText("");
-      // model_voice_description_->SetVoiceDescription(u8"< Voice Morphing Mode
-      // >");
+
+      // model_voice_description_->SetVoiceDescription(
+      //     u8"< Voice Morphing Mode >");
+
       SyncVoiceMorphingDescription();
+
       SyncVoiceMorphingSliders();
+
       tab_view_->selectTab(1);
     }
-    model_voice_description_->SetModelDescription(
-        model_config_->model.description);
+
+    model_voice_description_->SetModelDescription(model_config_->model.description);
 
     portrait_view_->setDirty();
     portrait_description_->setDirty();
+
+    RefreshVoiceButtonsSelection();
+
     morphing_weights_view_->setDirty();
 
     if (auto* const column_view = model_voice_description_->getParentView()) {
       column_view->setDirty();
     }
+
   } catch (const std::exception& e) {
-    model_selector->setText("<failed to load>");
+    model_selector->setText("");
+
     model_voice_description_->SetModelDescription(
         u8"Error:\n" +
-        std::u8string(e.what(), e.what() + std::strlen(e.what())));
+        std::u8string(reinterpret_cast<const char8_t*>(e.what()),
+                      reinterpret_cast<const char8_t*>(e.what()) +
+                          std::strlen(e.what())));
+
     return;
   }
 }
@@ -494,104 +729,205 @@ void Editor::SyncModelDescription() {
 // あとダブルクリックでデフォルトに戻したい。
 void Editor::valueChanged(CControl* const pControl) {
   const auto vst_param_id = pControl->getTag();
-  const auto param_id = static_cast<ParameterID>(vst_param_id);
-  const auto& param = common::kSchema.GetParameter(param_id);
+
   auto* const controller = static_cast<Controller*>(getController());
+
   auto& core = controller->core_;
+
   const auto communicate = [&controller](const int param_id,
                                          const double normalized_value) {
     controller->setParamNormalized(param_id, normalized_value);
+
     controller->beginEdit(param_id);
+
     controller->performEdit(param_id, normalized_value);
+
     controller->endEdit(param_id);
   };
-  // 各々の Control でやるべきという感じも
-  if (auto* const control = dynamic_cast<Slider*>(pControl)) {
-    // communicate 含めて controller の中に処理書いた方が明快？
-    const auto* const num_param = std::get_if<common::NumberParameter>(&param);
-    assert(num_param);
-    const auto plain_value = control->getValue();
+
+  // Voice ボタン専用処理。
+  // 画面上のボタンは通常の VST パラメータではないため、
+  // ここで本物の ParameterID::kVoice に変換する。
+  if (auto* const voice_button = dynamic_cast<VoiceButton*>(pControl)) {
+    const auto voice_vst_param_id =
+        static_cast<ParamID>(ParameterID::kVoice);
+
+    const auto voice_param_id = ParameterID::kVoice;
+
+    const auto& voice_param = common::kSchema.GetParameter(voice_param_id);
+
+    const auto* const list_param =
+        std::get_if<common::ListParameter>(&voice_param);
+
+    assert(list_param);
+
+    const auto plain_value = voice_button->GetVoiceId();
+
     if (plain_value ==
-        std::get<double>(core.parameter_state_.GetValue(param_id))) {
+        std::get<int>(core.parameter_state_.GetValue(voice_param_id))) {
+      RefreshVoiceButtonsSelection();
+
       return;
     }
-    const auto normalized_value =
-        static_cast<float>(Normalize(*num_param, plain_value));
-    const auto error_code = num_param->ControllerSetValue(core, plain_value);
+
+    const auto normalized_value = Normalize(*list_param, plain_value);
+
+    const auto error_code =
+        list_param->ControllerSetValue(core, plain_value);
+
+    if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
+      model_voice_description_->SetVoiceDescription(
+          u8"Error: Speaker ID out of range.");
+    }
+
     assert(error_code == common::ErrorCode::kSuccess);
+
+    communicate(voice_vst_param_id, normalized_value);
+
+    SyncValue(voice_vst_param_id, static_cast<float>(plain_value));
+
+    core.updated_parameters_.clear();
+
+    return;
+  }
+
+  const auto param_id = static_cast<ParameterID>(vst_param_id);
+
+  const auto& param = common::kSchema.GetParameter(param_id);
+
+  // 各々の Control でやるべきという感じも
+
+  if (auto* const control = dynamic_cast<Slider*>(pControl)) {
+    // communicate 含めて controller の中に処理書いた方が明快？
+    const auto* const num_param =
+        std::get_if<common::NumberParameter>(&param);
+
+    assert(num_param);
+
+    const auto plain_value = control->getValue();
+
+    if (plain_value ==
+        std::get<float>(core.parameter_state_.GetValue(param_id))) {
+      return;
+    }
+
+    const auto normalized_value =
+        static_cast<ParamValue>(Normalize(*num_param, plain_value));
+
+    const auto error_code = num_param->ControllerSetValue(core, plain_value);
+
+    assert(error_code == common::ErrorCode::kSuccess);
+
     communicate(vst_param_id, normalized_value);
 
   } else if (auto* const control = dynamic_cast<COptionMenu*>(pControl)) {
-    const auto* const list_param = std::get_if<common::ListParameter>(&param);
+    const auto* const list_param =
+        std::get_if<common::ListParameter>(&param);
+
     assert(list_param);
+
     const auto plain_value = static_cast<int>(control->getValue());
+
     if (plain_value ==
         std::get<int>(core.parameter_state_.GetValue(param_id))) {
       return;
     }
+
     const auto normalized_value = Normalize(*list_param, plain_value);
+
     const auto error_code = list_param->ControllerSetValue(core, plain_value);
+
     if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
       // これが表示されることは無いはず
       model_voice_description_->SetVoiceDescription(
           u8"Error: Speaker ID out of range.");
     }
+
     assert(error_code == common::ErrorCode::kSuccess);
+
     communicate(vst_param_id, normalized_value);
+
   } else if (auto* const control = dynamic_cast<FileSelector*>(pControl)) {
-    const auto* const str_param = std::get_if<common::StringParameter>(&param);
+    const auto* const str_param =
+        std::get_if<common::StringParameter>(&param);
+
     assert(str_param);
+
     const auto file = control->GetPath().u8string();
+
     auto error_code = str_param->ControllerSetValue(core, file);
+
     if (error_code == common::ErrorCode::kFileOpenError ||
         error_code == common::ErrorCode::kTOMLSyntaxError) {
       // Controller とは別に Editor::SyncModelDescription でも改めて
       // ファイルを読み込もうとして失敗するので、ここではエラー処理しない
       error_code = common::ErrorCode::kSuccess;
     }
+
     assert(error_code == common::ErrorCode::kSuccess);
+
     error_code = controller->SetStringParameter(vst_param_id, file);
+
     assert(error_code == common::ErrorCode::kSuccess);
+
     // processor に通知
     auto* const msg = controller->allocateMessage();
+
     msg->setMessageID("param_change");
+
     msg->getAttributes()->setBinary("param_id", &vst_param_id,
                                     sizeof(vst_param_id));
-    msg->getAttributes()->setBinary("data", file.c_str(), file.size());
+
+    msg->getAttributes()->setBinary(
+        "data", reinterpret_cast<const void*>(file.c_str()),
+        file.size() * sizeof(std::u8string::value_type));
+
     controller->sendMessage(msg);
+
     msg->release();
+
   } else {
     assert(false);
   }
 
   // 連動するパラメータの処理
-  for (const auto& param_id : core.updated_parameters_) {
-    const auto vst_param_id = static_cast<ParamID>(param_id);
-    const auto& value = core.parameter_state_.GetValue(param_id);
-    const auto& param = common::kSchema.GetParameter(param_id);
+  for (const auto& changed_param_id : core.updated_parameters_) {
+    const auto changed_vst_param_id = static_cast<ParamID>(changed_param_id);
+
+    const auto& value = core.parameter_state_.GetValue(changed_param_id);
+
+    const auto& changed_param =
+        common::kSchema.GetParameter(changed_param_id);
+
     if (const auto* const num_param =
-            std::get_if<common::NumberParameter>(&param)) {
+            std::get_if<common::NumberParameter>(&changed_param)) {
       const auto normalized_value =
-          Normalize(*num_param, std::get<double>(value));
-      communicate(vst_param_id, normalized_value);
+          Normalize(*num_param, std::get<float>(value));
+
+      communicate(changed_vst_param_id, normalized_value);
+
     } else if (const auto* const list_param =
-                   std::get_if<common::ListParameter>(&param)) {
+                   std::get_if<common::ListParameter>(&changed_param)) {
       const auto normalized_value =
           Normalize(*list_param, std::get<int>(value));
-      communicate(vst_param_id, normalized_value);
-    } else if (std::get_if<common::StringParameter>(&param)) {
+
+      communicate(changed_vst_param_id, normalized_value);
+
+    } else if (std::get_if<common::StringParameter>(&changed_param)) {
       // 現状何かに連動して StringParameter が変化することはない
       assert(false);
+
     } else {
       assert(false);
     }
   }
+
   core.updated_parameters_.clear();
 }
 
 // auto Editor::notify(CBaseObject* const sender,
-//                            const char* const message) -> CMessageResult{
-//     return VSTGUIEditor::notify(sender, message);
+//                     const char* const message) -> CMessageResult{
+//   return VSTGUIEditor::notify(sender, message);
 // }
 
 // 以下は open() からのみ呼ばれるメンバ関数
@@ -602,32 +938,43 @@ void Editor::BeginColumn(Context& context, const int width,
   context.column_back_color = back_color;
   context.column_start_y = context.y;
   context.column_start_x = context.x;
+
   context.y = 0;
   context.x = 0;
   context.last_element_mergin = kInnerColumnMerginY;
+
   context.x += kInnerColumnMerginX;
 }
 
 auto Editor::EndColumn(Context& context) -> CView* {
   // const auto bottom =
   //     context.y + std::max(context.last_element_mergin,
-  //     kInnerColumnMerginY);
+  //                          kInnerColumnMerginY);
   const auto bottom = kWindowHeight - kFooterHeight;
+
   auto* const column = new CViewContainer(
       CRect(context.column_start_x, kHeaderHeight,
             context.column_start_x + context.column_width, bottom));
+
   column->setBackgroundColor(context.column_back_color);
+
   frame->addView(column);
+
   for (auto&& element : context.column_elements) {
     column->addView(element);
   }
+
   context.column_elements.clear();
+
   context.y = kHeaderHeight;
   context.x = context.column_start_x + context.column_width + kColumnMerginX;
+
   context.column_start_y = -1;
   context.column_start_x = -1;
+
   context.last_element_mergin = 0;
   context.first_group = true;
+
   return column;
 }
 
@@ -637,73 +984,101 @@ void Editor::BeginTabColumn(Context& context, const int width,
   context.column_back_color = back_color;
   context.column_start_y = context.y;
   context.column_start_x = context.x;
+
   context.y = 0;
   context.x = 0;
   context.last_element_mergin = kInnerColumnMerginY;
+
   context.x += kInnerColumnMerginX;
 }
 
 auto Editor::EndTabColumn(Context& context) -> CView* {
-  auto size = CRect(context.column_start_x, kHeaderHeight,
-                    context.column_start_x + context.column_width,
-                    kWindowHeight - kFooterHeight);
+  auto size =
+      CRect(context.column_start_x, kHeaderHeight,
+            context.column_start_x + context.column_width,
+            kWindowHeight - kFooterHeight);
+
   if (!tab_view_) {
     tab_view_ = new VSTGUI::CTabView(
-        size,
-        CRect(context.column_start_x, kHeaderHeight,
-              context.column_start_x + context.column_width, kHeaderHeight));
+        size, CRect(context.column_start_x, kHeaderHeight,
+                    context.column_start_x + context.column_width,
+                    kHeaderHeight));
+
     frame->addView(tab_view_);
   }
+
   auto* child_view = new CViewContainer(size);
+
   child_view->setBackgroundColor(context.column_back_color);
+
   for (auto&& element : context.column_elements) {
     child_view->addView(element);
   }
+
   tab_view_->addTab(child_view);
+
   context.column_elements.clear();
+
   context.y = kHeaderHeight;
   context.x = context.column_start_x;
+
   context.column_start_y = -1;
   context.column_start_x = -1;
+
   context.last_element_mergin = 0;
   context.first_group = true;
+
   return tab_view_;
 }
 
 auto Editor::BeginGroup(Context& context, const std::u8string& name) -> CView* {
   if (!context.first_group) {
-    context.last_element_mergin = 20;  // 線を引くとかする？
+    context.last_element_mergin = 20;
+    // 線を引くとかする？
   }
+
   context.first_group = false;
+
   context.y += std::max(context.last_element_mergin, kGroupLabelMerginY);
+
   auto* const group_label =
       new CTextLabel(CRect(0, 0, context.column_width, kElementHeight)
                          .offset(context.x, context.y),
                      reinterpret_cast<const char*>((u8"⚙ " + name).c_str()),
                      nullptr, CParamDisplay::kNoFrame);
+
   group_label->setBackColor(kTransparentCColor);
   group_label->setFont(font_bold_);
   group_label->setFontColor(kDarkColorScheme.on_surface);
   group_label->setHoriAlign(CHoriTxtAlign::kLeftText);
+
   context.column_elements.push_back(group_label);
+
   context.y += kElementHeight;
   context.x += kGroupIndentX;
+
   context.last_element_mergin = kGroupLabelMerginY;
+
   return group_label;
 }
 
-void Editor::EndGroup(Context& context) { context.x -= kGroupIndentX; }
+void Editor::EndGroup(Context& context) {
+  context.x -= kGroupIndentX;
+}
 
 // NumberParameter 用
 auto Editor::MakeSlider(Context& context, const ParamID param_id,
                         const int precision, const float wheel_inc,
                         const float fine_wheel_inc) -> CView* {
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
+
   auto* const param =
-      static_cast<LinearParameter*>(controller->getParameterObject(param_id));
+      static_cast<Parameter*>(controller->getParameterObject(param_id));
+
   auto* const slider_bmp =
       new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
                          kDarkColorScheme.outline);
+
   auto* const handle_bmp =
       new MonotoneBitmap(kHandleWidth, kElementHeight,
                          kDarkColorScheme.secondary_dim, kTransparentCColor);
@@ -715,6 +1090,7 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
       this, static_cast<int>(param_id), context.x,
       context.x + kElementWidth - kHandleWidth, handle_bmp, slider_bmp,
       VST3::StringConvert::convert(param->getInfo().units), font_, precision);
+
   slider_control->setMin(param->GetMinPlain());
   slider_control->setMax(param->GetMaxPlain());
   slider_control->setWheelInc(wheel_inc);
@@ -723,24 +1099,31 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
       param->toPlain(param->getInfo().defaultNormalizedValue));
   slider_control->setValue(
       static_cast<float>(param->toPlain(param->getNormalized())));
+
   context.column_elements.push_back(slider_control);
+
   slider_bmp->forget();
   handle_bmp->forget();
 
   controls_.insert({param_id, slider_control});
 
   // 名前
-  const auto title_pos =
-      CRect(0, 0, kLabelWidth, kElementHeight)
-          .offset(context.x + kElementWidth + kElementMerginX, context.y);
-  const auto title_string =
-      VST3::StringConvert::convert(param->getInfo().title);
-  auto* const title_control = new CTextLabel(title_pos, title_string.c_str(),
-                                             nullptr, CParamDisplay::kNoFrame);
+  const auto title_pos = CRect(0, 0, kLabelWidth, kElementHeight)
+                             .offset(context.x + kElementWidth +
+                                         kElementMerginX,
+                                     context.y);
+
+  const auto title_string = VST3::StringConvert::convert(param->getInfo().title);
+
+  auto* const title_control =
+      new CTextLabel(title_pos, title_string.c_str(), nullptr,
+                     CParamDisplay::kNoFrame);
+
   title_control->setBackColor(kTransparentCColor);
   title_control->setFont(font_);
   title_control->setFontColor(kDarkColorScheme.on_surface);
   title_control->setHoriAlign(CHoriTxtAlign::kLeftText);
+
   context.column_elements.push_back(title_control);
 
   context.y += kElementHeight;
@@ -750,34 +1133,46 @@ auto Editor::MakeSlider(Context& context, const ParamID param_id,
 }
 
 // ListParameter 用
-auto Editor::MakeCombobox(
-    Context& context, const ParamID param_id,
-    const CColor& back_color = kTransparentCColor,
-    const CColor& font_color = kDarkColorScheme.on_surface) -> CView* {
-  auto* const param = static_cast<StringListParameter*>(
-      controller->getParameterObject(param_id));
+auto Editor::MakeCombobox(Context& context, const ParamID param_id,
+                          const CColor& back_color,
+                          const CColor& font_color) -> CView* {
+  auto* const param =
+      static_cast<StringListParameter*>(controller->getParameterObject(param_id));
+
   const auto step_count = param->getInfo().stepCount;
 
-  auto* const bmp = new MonotoneBitmap(kElementWidth, kElementHeight,
-                                       back_color, kDarkColorScheme.outline);
+  auto* const bmp =
+      new MonotoneBitmap(kElementWidth, kElementHeight, back_color,
+                         kDarkColorScheme.outline);
+
   context.y += std::max(context.last_element_mergin, kElementMerginY);
 
   const auto pos =
       CRect(0, 0, kElementWidth, kElementHeight).offset(context.x, context.y);
-  auto* const control =
-      new COptionMenu(pos, this, static_cast<int>(param_id), bmp);
+
+  auto* const control = new COptionMenu(pos, this, static_cast<int>(param_id),
+                                        bmp);
+
   bmp->forget();
+
   for (auto i = 0; i <= step_count; ++i) {
     String128 tmp_string128;
+
     param->toString(param->toNormalized(i), tmp_string128);
+
     const auto name = VST3::StringConvert::convert(tmp_string128);
+
     control->addEntry(name.c_str());
   }
+
   control->setValue(static_cast<float>(
       param->toPlain(controller->getParamNormalized(param_id))));
+
   control->setFont(font_);
   control->setFontColor(font_color);
+
   context.column_elements.push_back(control);
+
   controls_.insert({param_id, control});
 
   // ▼ 記号
@@ -785,32 +1180,44 @@ auto Editor::MakeCombobox(
       CRect(0, 0, kElementHeight, kElementHeight)
           .offset(context.x + (kElementWidth - kElementHeight), context.y)
           .inset(8, 8);
+
   auto* const arrow_control =
       new CTextLabel(arrow_pos, reinterpret_cast<const char*>(u8"▼"), nullptr,
                      CParamDisplay::kNoFrame);
+
   arrow_control->setBackColor(kTransparentCColor);
-  auto* const arrow_font =
-      new CFontDesc(font_->getName(), font_->getSize() - 6);
+
+  auto* const arrow_font = new CFontDesc(font_->getName(), font_->getSize() - 6);
+
   arrow_control->setFont(arrow_font);
+
   arrow_font->forget();
+
   arrow_control->setFontColor(font_color);
   arrow_control->setHoriAlign(CHoriTxtAlign::kCenterText);
+
   // クリックの判定吸われないように、▼ 記号へのマウス操作を無効にする
   arrow_control->setMouseEnabled(false);
+
   context.column_elements.push_back(arrow_control);
 
   // 名前
-  const auto title_pos =
-      CRect(0, 0, kLabelWidth, kElementHeight)
-          .offset(context.x + kElementWidth + kElementMerginX, context.y);
-  const auto title_string =
-      VST3::StringConvert::convert(param->getInfo().title);
-  auto* const title_control = new CTextLabel(title_pos, title_string.c_str(),
-                                             nullptr, CParamDisplay::kNoFrame);
+  const auto title_pos = CRect(0, 0, kLabelWidth, kElementHeight)
+                             .offset(context.x + kElementWidth +
+                                         kElementMerginX,
+                                     context.y);
+
+  const auto title_string = VST3::StringConvert::convert(param->getInfo().title);
+
+  auto* const title_control =
+      new CTextLabel(title_pos, title_string.c_str(), nullptr,
+                     CParamDisplay::kNoFrame);
+
   title_control->setBackColor(kTransparentCColor);
   title_control->setFont(font_);
   title_control->setFontColor(kDarkColorScheme.on_surface);
   title_control->setHoriAlign(CHoriTxtAlign::kLeftText);
+
   context.column_elements.push_back(title_control);
 
   context.y += kElementHeight;
@@ -824,45 +1231,58 @@ auto Editor::MakeCombobox(
 // -> valueChanged から ControllerSetValue が呼ばれる
 // -> valueChanged から processor にメッセージ (ファイル名) を送る
 // -> notify で processor の mutex を取得、
-//    この間 process は無音を出力し、パラメータ変更はキューに詰めとく
+// この間 process は無音を出力し、パラメータ変更はキューに詰めとく
 // -> モデルを読み込む
 // -> valueChanged で連動した他のパラメータの変更が処理される
-auto Editor::MakeFileSelector(Context& context, ParamID vst_param_id)
-    -> CView* {
+auto Editor::MakeFileSelector(Context& context, ParamID vst_param_id) -> CView* {
   const auto param_id = static_cast<ParameterID>(vst_param_id);
+
   const auto param =
       std::get<common::StringParameter>(common::kSchema.GetParameter(param_id));
+
   auto* const bmp =
       new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
                          kDarkColorScheme.outline);
+
   context.y += std::max(context.last_element_mergin, kElementMerginY);
 
   const auto pos =
       CRect(0, 0, kElementWidth, kElementHeight).offset(context.x, context.y);
+
   auto* const control =
       new FileSelector(pos, this, static_cast<int>(vst_param_id), bmp);
+
   bmp->forget();
+
   auto* const controller = static_cast<Controller*>(getController());
+
   control->setBackColor(kTransparentCColor);
   control->setFont(font_);
   control->setFontColor(kDarkColorScheme.on_surface);
   control->setHoriAlign(CHoriTxtAlign::kCenterText);
-  control->SetPath(*std::get<std::unique_ptr<std::u8string>>(
+
+  control->SetPath(std::get<std::u8string>(
       controller->core_.parameter_state_.GetValue(param_id)));
+
   context.column_elements.push_back(control);
+
   controls_.insert({vst_param_id, control});
 
   // 名前
-  const auto title_pos =
-      CRect(0, 0, kLabelWidth, kElementHeight)
-          .offset(context.x + kElementWidth + kElementMerginX, context.y);
+  const auto title_pos = CRect(0, 0, kLabelWidth, kElementHeight)
+                             .offset(context.x + kElementWidth +
+                                         kElementMerginX,
+                                     context.y);
+
   auto* const title_control = new CTextLabel(
       title_pos, reinterpret_cast<const char*>(param.GetName().c_str()),
       nullptr, CParamDisplay::kNoFrame);
+
   title_control->setBackColor(kTransparentCColor);
   title_control->setFont(font_);
   title_control->setFontColor(kDarkColorScheme.on_surface);
   title_control->setHoriAlign(CHoriTxtAlign::kLeftText);
+
   context.column_elements.push_back(title_control);
 
   context.y += kElementHeight;
@@ -873,14 +1293,18 @@ auto Editor::MakeFileSelector(Context& context, ParamID vst_param_id)
 
 auto Editor::MakePortraitView(Context& context) -> CView* {
   portrait_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
+
   context.column_elements.push_back(portrait_view_);
+
   context.y += kPortraitHeight;
   context.last_element_mergin = kElementMerginY;
+
   return portrait_view_;
 }
 
 auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
   context.y += std::max(context.last_element_mergin, 24);
+
   const auto offset_x = context.x;
 
   model_voice_description_ = new ModelVoiceDescription(
@@ -895,22 +1319,81 @@ auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
 
 auto Editor::MakePortraitDescription(Context& context) -> CView* {
   context.y += std::max(context.last_element_mergin, 24);
+
   const auto offset_x = context.x;
+
   auto* const description = new CMultiLineTextLabel(
       CRect(context.x, context.y, context.column_width - offset_x,
             kWindowHeight - kFooterHeight));
+
   description->setFont(font_description_);
   description->setFontColor(kDarkColorScheme.on_surface);
   description->setBackColor(kTransparentCColor);
   description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
   description->setStyle(CParamDisplay::kNoFrame);
   description->setHoriAlign(CHoriTxtAlign::kLeftText);
+
   portrait_description_ = description;
+
   context.column_elements.push_back(portrait_description_);
 
   context.y = kWindowHeight - kFooterHeight;
   context.last_element_mergin = kElementMerginY;
+
   return description;
+}
+
+auto Editor::MakeVoiceButtonsView(Context& context) -> CView* {
+  context.y += std::max(context.last_element_mergin, kElementMerginY);
+
+  const auto size =
+      CRect(context.x, context.y, context.column_width - context.x,
+            kWindowHeight - kFooterHeight - kHeaderHeight);
+
+  const auto container_size =
+      CRect(0, 0, size.getWidth(),
+            (kElementHeight + kElementMerginY) * common::kMaxNSpeakers);
+
+  voice_buttons_view_ =
+      new VSTGUI::CScrollView(size, container_size,
+                              VSTGUI::CScrollView::kVerticalScrollbar |
+                                  VSTGUI::CScrollView::kDontDrawFrame |
+                                  VSTGUI::CScrollView::kOverlayScrollbars);
+
+  voice_buttons_view_->setBackgroundColor(kTransparentCColor);
+
+  auto scroll_bar = voice_buttons_view_->getVerticalScrollbar();
+
+  scroll_bar->setFrameColor(kDarkColorScheme.outline);
+  scroll_bar->setScrollerColor(kDarkColorScheme.secondary_dim);
+  scroll_bar->setBackgroundColor(kTransparentCColor);
+
+  context.column_elements.push_back(voice_buttons_view_);
+
+  context.y = kWindowHeight - kFooterHeight - kHeaderHeight;
+  context.last_element_mergin = kElementMerginY;
+
+  return voice_buttons_view_;
+}
+
+void Editor::RefreshVoiceButtonsSelection() {
+  if (!controls_.contains(static_cast<ParamID>(ParameterID::kVoice))) {
+    return;
+  }
+
+  auto* const voice_control =
+      controls_.at(static_cast<ParamID>(ParameterID::kVoice));
+
+  const auto selected_voice_id =
+      static_cast<int>(std::round(voice_control->getValue()));
+
+  for (auto* const button : voice_buttons_) {
+    if (!button) {
+      continue;
+    }
+
+    button->SetSelected(button->GetVoiceId() == selected_voice_id);
+  }
 }
 
 auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
@@ -919,26 +1402,34 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   const auto size =
       CRect(context.x, context.y, context.column_width - context.x,
             kWindowHeight - kFooterHeight - kHeaderHeight);
+
   const auto container_size =
       CRect(0, 0, size.getWidth(),
             (kElementHeight + kElementMerginY) * common::kMaxNSpeakers);
+
   morphing_weights_view_ =
       new VSTGUI::CScrollView(size, container_size,
                               VSTGUI::CScrollView::kVerticalScrollbar |
                                   VSTGUI::CScrollView::kDontDrawFrame |
                                   VSTGUI::CScrollView::kOverlayScrollbars);
+
   // morphing_weights_view_->setAutosizeFlags( VSTGUI::kAutosizeRow |
-  // VSTGUI::kAutosizeBottom );
+  //                                           VSTGUI::kAutosizeBottom );
+
   morphing_weights_view_->setBackgroundColor(kTransparentCColor);
+
   auto scroll_bar = morphing_weights_view_->getVerticalScrollbar();
+
   scroll_bar->setFrameColor(kDarkColorScheme.outline);
   scroll_bar->setScrollerColor(kDarkColorScheme.secondary_dim);
   scroll_bar->setBackgroundColor(kTransparentCColor);
 
   static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
+
   auto* const slider_bmp =
       new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
                          kDarkColorScheme.outline);
+
   auto* const handle_bmp =
       new MonotoneBitmap(kHandleWidth, kElementHeight,
                          kDarkColorScheme.secondary_dim, kTransparentCColor);
@@ -946,12 +1437,16 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   const auto label_width = morphing_weights_view_->getWidth() - kElementWidth -
                            kElementMerginX -
                            morphing_weights_view_->getScrollbarWidth();
+
   for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
-    const auto label_pos = CRect(0, 0, label_width, kElementHeight)
-                               .offset(kElementWidth + kElementMerginX,
-                                       i * (kElementHeight + kElementMerginY));
+    const auto label_pos =
+        CRect(0, 0, label_width, kElementHeight)
+            .offset(kElementWidth + kElementMerginX,
+                    i * (kElementHeight + kElementMerginY));
+
     auto* const label_control =
         new CTextLabel(label_pos, "", nullptr, CParamDisplay::kNoFrame);
+
     label_control->setBackColor(kTransparentCColor);
     label_control->setFont(font_);
     label_control->setFontColor(kDarkColorScheme.on_surface);
@@ -959,25 +1454,34 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
     label_control->setVisible(false);
 
     morphing_weights_view_->addView(label_control);
+
     morphing_labels_[i] = label_control;
   }
+
   for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
     auto const vst_param_id =
-        static_cast<int>(ParameterID::kVoiceMorphWeights) + i;
+        static_cast<ParamID>(static_cast<int>(ParameterID::kVoiceMorphWeights) +
+                             i);
+
     auto const param_id = static_cast<ParamID>(vst_param_id);
+
     auto* const param =
-        static_cast<LinearParameter*>(controller->getParameterObject(param_id));
+        static_cast<Parameter*>(controller->getParameterObject(param_id));
+
     auto* const slider_control = new Slider(
         CRect(0, 0, kElementWidth, kElementHeight)
             .offset(0, i * (kElementHeight + kElementMerginY)),
         this, static_cast<int>(param_id), 0, kElementWidth - kHandleWidth,
         handle_bmp, slider_bmp,
         VST3::StringConvert::convert(param->getInfo().units), font_, 2);
+
     slider_control->setValue(
         static_cast<float>(param->toPlain(param->getNormalized())));
+
     slider_control->setVisible(false);
 
     morphing_weights_view_->addView(slider_control);
+
     controls_.insert({vst_param_id, slider_control});
   }
 
@@ -985,6 +1489,7 @@ auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
   handle_bmp->forget();
 
   context.column_elements.push_back(morphing_weights_view_);
+
   return morphing_weights_view_;
 }
 
@@ -993,21 +1498,23 @@ void Editor::SyncVoiceMorphingDescription() {
 
   str += u8"[注意 / Caution]";
   str += u8"\n";
-  str +=
-      u8"Voice Morphing Mode では、未選択の Voice の学習データが\n"
-      u8"変換結果に影響を与えやすくなる可能性があります。\n"
-      u8"意図せぬ声質の類似や権利侵害にご注意ください。\n";
-  str +=
-      u8"In Voice Morphing Mode, the training data of unselected Voices could "
-      u8"be more prone to influencing the conversion results. Please be "
-      u8"mindful of unintended similarities in timbre and possible rights "
-      u8"infringement.\n";
+  str += u8"Voice Morphing Mode では、未選択の Voice の学習データが\n"
+         u8"変換結果に影響を与えやすくなる可能性があります。\n"
+         u8"意図せぬ声質の類似や権利侵害にご注意ください。\n";
+
+  str += u8"In Voice Morphing Mode, the training data of unselected Voices could "
+         u8"be more prone to influencing the conversion results.\n"
+         u8"Please be mindful of unintended similarities in timbre and possible "
+         u8"rights infringement.\n";
+
   str += u8"\n";
 
   for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
     if (morphing_labels_[i]->isVisible()) {
-      auto control =
-          controls_.at(static_cast<int>(ParameterID::kVoiceMorphWeights) + i);
+      auto control = controls_.at(
+          static_cast<ParamID>(static_cast<int>(ParameterID::kVoiceMorphWeights) +
+                               i));
+
       if (control->getValue() >=
           (0.01f - std::numeric_limits<float>::epsilon())) {
         str += model_config_->voices[i].name;
@@ -1015,24 +1522,27 @@ void Editor::SyncVoiceMorphingDescription() {
         str += model_config_->voices[i].description;
         str += u8"\n";
       }
+
     } else {
       break;
     }
   }
+
   model_voice_description_->SetVoiceDescription(str);
 }
 
 void Editor::SyncVoiceMorphingSliders() {
   if (model_config_ && model_config_->model.VersionInt() >= 2) {
     int non_zero_count = 0;
+
     auto f_set_zero = [this](Slider* slider) {
       slider->setValue(0.0f);
       slider->setDirty();
     };
 
     for (int i = 0; i < common::kMaxNSpeakers; ++i) {
-      auto* const slider =
-          static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+      auto* const slider = static_cast<Slider*>(
+          controls_.at(static_cast<ParamID>(
               static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
 
       // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
@@ -1041,6 +1551,7 @@ void Editor::SyncVoiceMorphingSliders() {
       if (slider->getValue() >=
           (0.01f - std::numeric_limits<float>::epsilon())) {
         ++non_zero_count;
+
       } else {
         f_set_zero(slider);
       }
@@ -1049,22 +1560,26 @@ void Editor::SyncVoiceMorphingSliders() {
     if (non_zero_count < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
       // 非ゼロの重みの数が上限を下回っていた場合はすべてのスライダーを有効化する
       for (int i = 0; i < common::kMaxNSpeakers; ++i) {
-        auto* const slider =
-            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+        auto* const slider = static_cast<Slider*>(
+            controls_.at(static_cast<ParamID>(
                 static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+
         slider->SetEnabled(true);
       }
+
     } else {
       // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
       // GUI経由でそれ以上非ゼロの重みが増えないようにする
       // (DAW側からは変化しうるので、非ゼロの重みが増えることはある)
       for (int i = 0; i < common::kMaxNSpeakers; ++i) {
-        auto* const slider =
-            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
+        auto* const slider = static_cast<Slider*>(
+            controls_.at(static_cast<ParamID>(
                 static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
+
         if (slider->getValue() >=
             (0.01f - std::numeric_limits<float>::epsilon())) {
           slider->SetEnabled(true);
+
         } else {
           slider->SetEnabled(false);
         }

@@ -347,6 +347,54 @@ class FileSelector : public CTextLabel {
   std::filesystem::path file_;
 };
 
+class VoiceButton : public CTextLabel {
+ public:
+  VoiceButton(const CRect& size, IControlListener* listener, int32_t tag,
+              int voice_id)
+      : CTextLabel(size, "", nullptr, CParamDisplay::kNoFrame),
+        voice_id_(voice_id) {
+    setTag(tag);
+    setListener(listener);
+    setValue(static_cast<float>(voice_id_));
+    setMouseEnabled(true);
+    setWantsFocus(true);
+    setBackColor(kTransparentCColor);
+    setFrameColor(kDarkColorScheme.outline);
+    setFontColor(kDarkColorScheme.on_surface);
+    setHoriAlign(CHoriTxtAlign::kCenterText);
+  }
+
+  [[nodiscard]] auto GetVoiceId() const -> int { return voice_id_; }
+
+  void SetSelected(const bool selected) {
+    selected_ = selected;
+    if (selected_) {
+      setBackColor(kDarkColorScheme.primary);
+      setFontColor(kDarkColorScheme.on_primary);
+      setFrameColor(kDarkColorScheme.primary);
+    } else {
+      setBackColor(kTransparentCColor);
+      setFontColor(kDarkColorScheme.on_surface);
+      setFrameColor(kDarkColorScheme.outline);
+    }
+    setDirty();
+  }
+
+  auto onMouseDown(CPoint& where, const CButtonState& buttons)
+      -> CMouseEventResult override {
+    if (buttons.isLeftButton()) {
+      setValue(static_cast<float>(voice_id_));
+      valueChanged();
+      return VSTGUI::kMouseEventHandled;
+    }
+    return CTextLabel::onMouseDown(where, buttons);
+  }
+
+ private:
+  int voice_id_ = 0;
+  bool selected_ = false;
+};
+
 class HorizontalLine : public VSTGUI::CView {
  public:
   HorizontalLine(const CRect& size, const CColor& color,

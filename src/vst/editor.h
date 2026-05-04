@@ -19,7 +19,7 @@
 
 namespace beatrice::vst {
 
-static constexpr auto kWindowWidth = 1280;
+static constexpr auto kWindowWidth = 1188;
 static constexpr auto kWindowHeight = 720;
 
 class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
@@ -45,7 +45,10 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   static constexpr auto kFooterHeight = 32;
   static constexpr auto kColumnMerginY = 0;
   static constexpr auto kColumnMerginX = 1;
-  static constexpr auto kColumnWidth = 400 - kColumnMerginX;
+　//static constexpr auto kColumnWidth = 400 - kColumnMerginX;
+  static constexpr auto kVoiceColumnWidth = 316 - kColumnMerginX;
+　static constexpr auto kColumnWidth = 390 - kColumnMerginX;
+
   static constexpr auto kInnerColumnMerginY = 12;
   static constexpr auto kInnerColumnMerginX = 12;
   static constexpr auto kGroupLabelMerginY = 12;
@@ -58,7 +61,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
       kColumnWidth - 2 * (kInnerColumnMerginX + kGroupIndentX) - kElementWidth -
       kElementMerginX;
   static constexpr auto kPortraitColumnWidth =
-      kWindowWidth - 2 * (kColumnWidth + kColumnMerginX);
+      kWindowWidth - kVoiceColumnWidth - kColumnWidth - 2 * kColumnMerginX;
   static constexpr auto kPortraitWidth = kPortraitColumnWidth;
   static constexpr auto kPortraitHeight = kPortraitWidth;
   struct Context {
@@ -84,6 +87,8 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
       -> CView*;
   auto MakeCombobox(Context&, ParamID, const CColor&, const CColor&) -> CView*;
   auto MakeFileSelector(Context&, ParamID param_id) -> CView*;
+  auto MakeVoiceButtonsView(Context&) -> CView*;
+  void RefreshVoiceButtonsSelection();
   auto MakePortraitView(Context&) -> CView*;
   auto MakeModelVoiceDescription(Context&) -> CView*;
   auto MakePortraitDescription(Context&) -> CView*;
@@ -103,6 +108,10 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
 
   CView* portrait_view_;
   CMultiLineTextLabel* portrait_description_;
+
+  VSTGUI::CScrollView* voice_buttons_view_;
+
+  std::vector<VoiceButton*> voice_buttons_;
 
   std::map<std::u8string, SharedPointer<CBitmap>> portraits_;
 
