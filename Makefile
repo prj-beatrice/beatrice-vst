@@ -1,3 +1,6 @@
+BEATRICE_DEV_VERSION ?= ON
+CMAKE_GENERATOR ?= Visual Studio 17 2022
+
 all: release
 
 # GitHub Actions の windows-latest 環境でビルドされたものであり、
@@ -5,27 +8,22 @@ all: release
 lib/beatricelib/beatrice.lib:
 	curl -fLo lib/beatricelib/beatrice.lib https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice.lib
 
-build/vst: CMakeLists.txt
-	mkdir build
-	cd build \
-	&& cmake .. -G "Visual Studio 17 2022" -A x64 -B vst -DSMTG_USE_STATIC_CRT=ON
+configure: CMakeLists.txt lib/beatricelib/beatrice.lib
+	cmake . -G "$(CMAKE_GENERATOR)" -A x64 -B build/vst -DSMTG_USE_STATIC_CRT=ON -DBEATRICE_DEV_VERSION=$(BEATRICE_DEV_VERSION)
 
-debug: build/vst lib/beatricelib/beatrice.lib $(wildcard src/*/*)
-	cd build \
-	&& cmake --build vst
+debug: configure $(wildcard src/*/*)
+	cmake --build build/vst --config Debug
 
-release: build/vst lib/beatricelib/beatrice.lib $(wildcard src/*/*)
-	cd build \
-	&& cmake --build vst --config Release
+release: configure $(wildcard src/*/*)
+	cmake --build build/vst --config Release
 
-distribution: build/vst lib/beatricelib/beatrice.lib
-	cd build \
-	&& cmake --build vst --config Release --target distribution
+distribution: configure
+	cmake --build build/vst --config Release --target distribution
 
 cpplint:
 	cpplint --filter=-runtime/references,-build/header_guard,-readability/nolint --recursive src
 
 clean:
-	rm -rf build
+	cmake -E rm -rf build
 
-.PHONY: all debug release distribution cpplint clean
+.PHONY: all configure debug release distribution cpplint clean
