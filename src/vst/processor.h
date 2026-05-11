@@ -40,6 +40,7 @@ class Processor : public Steinberg::Vst::AudioEffect {
 
   auto PLUGIN_API setupProcessing(ProcessSetup& setup) -> tresult SMTG_OVERRIDE;
   auto PLUGIN_API setActive(TBool state) -> tresult SMTG_OVERRIDE;
+  auto PLUGIN_API getLatencySamples() -> uint32 SMTG_OVERRIDE;
   auto PLUGIN_API process(ProcessData& data) -> tresult SMTG_OVERRIDE;
 
   auto PLUGIN_API setState(IBStream* state) -> tresult SMTG_OVERRIDE;
