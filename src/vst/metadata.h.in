@@ -40,8 +40,8 @@ static const Steinberg::FUID kControllerUID(0x00000000, 0x00000000, 0x00000000,
                                             0x00000000);
 #else
 // clang-format off
-static const Steinberg::FUID kProcessorUID(@processor_uid@);
-static const Steinberg::FUID kControllerUID(@controller_uid@);
+static const Steinberg::FUID kProcessorUID(@BEATRICE_PROCESSOR_UID@);
+static const Steinberg::FUID kControllerUID(@BEATRICE_CONTROLLER_UID@);
 // clang-format on
 #endif
 

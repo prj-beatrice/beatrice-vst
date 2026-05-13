@@ -13,23 +13,10 @@ execute_process(
 math(EXPR build_number 0x${GIT_HASH})
 message(STATUS "build_number: ${build_number}")
 
-if(DEFINED ENV{CI})
-    execute_process(
-        COMMAND python -c "import uuid; u=uuid.uuid4().hex; print(*[f'0x{u[8*i:8*i+8]}' for i in range(4)], sep=', ')"
-        OUTPUT_VARIABLE processor_uid
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    execute_process(
-        COMMAND python -c "import uuid; u=uuid.uuid4().hex; print(*[f'0x{u[8*i:8*i+8]}' for i in range(4)], sep=', ')"
-        OUTPUT_VARIABLE controller_uid
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    message(STATUS "processor_uid: ${processor_uid}")
-    message(STATUS "controller_uid: ${controller_uid}")
-else()
-    set(processor_uid "0x06659064, 0x6f594d89, 0xb4a2aa65, 0xf13c17b2")
-    set(controller_uid "0x3c46dde3, 0xa03045f8, 0x80688f81, 0x88408160")
-endif()
+set(BEATRICE_PROCESSOR_UID "0x06659064, 0x6f594d89, 0xb4a2aa65, 0xf13c17b2" CACHE STRING "VST3 processor UUID")
+set(BEATRICE_CONTROLLER_UID "0x3c46dde3, 0xa03045f8, 0x80688f81, 0x88408160" CACHE STRING "VST3 controller UUID")
+message(STATUS "BEATRICE_PROCESSOR_UID: ${BEATRICE_PROCESSOR_UID}")
+message(STATUS "BEATRICE_CONTROLLER_UID: ${BEATRICE_CONTROLLER_UID}")
 
 project(beatrice VERSION ${major_version}.${minor_version}.${patch_version})
 option(BEATRICE_DEV_VERSION "Development version" ON)
@@ -57,7 +44,8 @@ add_subdirectory(lib/vst3sdk)
 
 smtg_enable_vst3_sdk()
 
-configure_file(src/vst/metadata.h.in src/vst/metadata.h)
+configure_file(src/vst/metadata.h.in src/vst/metadata.h @ONLY)
+configure_file(resource/Info.plist.in resource/Info.plist @ONLY)
 set(SMTG_PACKAGE_ICON_PATH ${CMAKE_CURRENT_SOURCE_DIR}/resource/icon.ico)
 
 smtg_add_vst3plugin(${target}
@@ -75,9 +63,16 @@ smtg_add_vst3plugin(${target}
 )
 
 add_library(beatricelib STATIC IMPORTED)
+if(SMTG_WIN)
+    set(BEATRICE_LIBRARY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/beatricelib/beatrice.lib)
+elseif(SMTG_MAC)
+    set(BEATRICE_LIBRARY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/beatricelib/libbeatrice.a)
+else()
+    message(FATAL_ERROR "Unsupported platform")
+endif()
 set_property(
     TARGET beatricelib
-    PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/lib/beatricelib/beatrice.lib
+    PROPERTY IMPORTED_LOCATION ${BEATRICE_LIBRARY_PATH}
 )
 
 target_include_directories(${target}
@@ -92,29 +87,31 @@ target_link_libraries(${target}
     PRIVATE vstgui_support
 )
 
-if(SMTG_WIN)
+if(SMTG_MAC)
+    set(platform mac)
+    smtg_target_add_plugin_resource(${target} resource/logo.png)
+    smtg_target_set_bundle(${target}
+        BUNDLE_IDENTIFIER "com.prj-beatrice.vst3.beatrice2"
+        INFOPLIST "${CMAKE_CURRENT_BINARY_DIR}/resource/Info.plist" PREPROCESS
+    )
+elseif(SMTG_WIN)
+    set(platform win)
     target_sources(${target}
         PRIVATE resource/beatrice.rc
     )
-else()
-    message(WARNING "Unsupported platform")
 endif()
 
 # ----------------------------------------------------------------
 
-set(DISTRIBUTION_DIR ${CMAKE_CURRENT_BINARY_DIR}/beatrice_${full_version_str})
-add_custom_target(distribution
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${DISTRIBUTION_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy_directory $<TARGET_FILE_DIR:${target}>/../../.. ${DISTRIBUTION_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt ${DISTRIBUTION_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/LICENSES_BUNDLED.txt ${DISTRIBUTION_DIR}
-)
-add_dependencies(distribution ${target})
+set(ARTIFACT_ROOT ${CMAKE_CURRENT_BINARY_DIR}/dist)
+file(MAKE_DIRECTORY ${ARTIFACT_ROOT})
+get_target_property(PLUGIN_PACKAGE_PATH ${target} SMTG_PLUGIN_PACKAGE_PATH)
 
+set(PARAPHERNALIA_COMMANDS)
 if(NOT BEATRICE_DEV_VERSION)
-    set(PARAPHERNALIA_DIR ${DISTRIBUTION_DIR}/beatrice_paraphernalia_jvs)
+    set(PARAPHERNALIA_DIR ${CMAKE_CURRENT_BINARY_DIR}/beatrice_paraphernalia_jvs)
     file(MAKE_DIRECTORY ${PARAPHERNALIA_DIR})
-    set(BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_156_03000000")
+    set(PARAPHERNALIA_BASE_URL "https://huggingface.co/fierce-cats/beatrice-2.0.0-alpha/resolve/rc.0/rc.0/beatrice_paraphernalia_jvs_156_03000000")
     set(PARAPHERNALIA_FILES
         beatrice_paraphernalia_jvs.toml
         phone_extractor.bin
@@ -125,6 +122,22 @@ if(NOT BEATRICE_DEV_VERSION)
         noimage.png
     )
     foreach(file ${PARAPHERNALIA_FILES})
-        file(DOWNLOAD ${BASE_URL}/${file} ${PARAPHERNALIA_DIR}/${file})
+        file(DOWNLOAD ${PARAPHERNALIA_BASE_URL}/${file} ${PARAPHERNALIA_DIR}/${file})
     endforeach()
+    list(APPEND PARAPHERNALIA_COMMANDS
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${PARAPHERNALIA_DIR} ${target}/beatrice_paraphernalia_jvs
+    )
 endif()
+
+add_custom_target(distribution
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${target}
+    COMMAND ${CMAKE_COMMAND} -E rm -f ${target}_${platform}.zip
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${target}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PLUGIN_PACKAGE_PATH} ${target}/${target}.vst3
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt ${target}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/LICENSES_BUNDLED.txt ${target}
+    ${PARAPHERNALIA_COMMANDS}
+    COMMAND ${CMAKE_COMMAND} -E tar cfv ${target}_${platform}.zip --format=zip ${target}
+    WORKING_DIRECTORY ${ARTIFACT_ROOT}
+)
+add_dependencies(distribution ${target})

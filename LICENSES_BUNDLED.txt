@@ -22,6 +22,10 @@ toml11
 MIT License
 https://github.com/ToruNiina/toml11/blob/main/LICENSE
 
+SIMD Everywhere
+MIT License
+https://github.com/simd-everywhere/simde/blob/master/COPYING
+
 ---
 
 Beatrice (VST®) のプログラムには非公開の推論ライブラリが含まれ、Project Beatrice に
