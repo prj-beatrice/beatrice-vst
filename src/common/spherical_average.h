@@ -7,9 +7,9 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
-#include <cstdlib>
 #include <limits>
 #include <memory>
+#include <new>
 #include <vector>
 
 /**
@@ -29,6 +29,9 @@ namespace beatrice::common {
 // custom allocator for aligned vectors.
 template <typename T, std::size_t N>
 class AlignedAllocator {
+  static_assert((N & (N - 1)) == 0);
+  static_assert(N >= alignof(T));
+
  public:
   using value_type = T;
 
@@ -42,22 +45,13 @@ class AlignedAllocator {
     if (n == 0) {
       return nullptr;
     }
-    // calculate memory size
-    // N must be a multiple of the size of T
-    std::size_t size = n * sizeof(T);
-
-    // allocate aligned memory at N-byte boundaries
-    // note that size must be a multiple of N
-    void* ptr = _aligned_malloc(size, N);
-    // throw an exception if memory allocation fails
-    if (ptr == nullptr) {
-      throw std::bad_alloc();
-    }
-    return static_cast<T*>(ptr);
+    return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t{N}));
   }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
-  void deallocate(T* ptr, std::size_t) noexcept { _aligned_free(ptr); }
+  void deallocate(T* ptr, std::size_t) noexcept {
+    ::operator delete(ptr, std::align_val_t{N});
+  }
 
   template <class U>
   // NOLINTNEXTLINE(readability-identifier-naming)
