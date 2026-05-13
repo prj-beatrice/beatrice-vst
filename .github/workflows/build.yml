@@ -8,7 +8,23 @@ on:
     branches: "**"
 
 jobs:
-  build:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      beatrice_dev_version: ${{ steps.values.outputs.beatrice_dev_version }}
+      processor_uid: ${{ steps.values.outputs.processor_uid }}
+      controller_uid: ${{ steps.values.outputs.controller_uid }}
+
+    steps:
+      - id: values
+        shell: bash
+        run: |
+          [[ "${GITHUB_REF}" == refs/tags/v* ]] && echo "beatrice_dev_version=OFF" >> "${GITHUB_OUTPUT}" || echo "beatrice_dev_version=ON" >> "${GITHUB_OUTPUT}"
+          python3 -c "import uuid; u=uuid.uuid4().hex; print('processor_uid=' + ','.join(f'0x{u[8*i:8*i+8]}' for i in range(4)))" >> "${GITHUB_OUTPUT}"
+          python3 -c "import uuid; u=uuid.uuid4().hex; print('controller_uid=' + ','.join(f'0x{u[8*i:8*i+8]}' for i in range(4)))" >> "${GITHUB_OUTPUT}"
+
+  build-windows:
+    needs: prepare
     runs-on: windows-latest
 
     steps:
@@ -20,12 +36,35 @@ jobs:
       - name: Build
         run: >
           mingw32-make.exe distribution
-          BEATRICE_DEV_VERSION=${{ startsWith(github.ref, 'refs/tags/v') && 'OFF' || 'ON' }}
+          "BEATRICE_DEV_VERSION=${{ needs.prepare.outputs.beatrice_dev_version }}"
+          "BEATRICE_PROCESSOR_UID=${{ needs.prepare.outputs.processor_uid }}"
+          "BEATRICE_CONTROLLER_UID=${{ needs.prepare.outputs.controller_uid }}"
 
-      - name: Upload VST
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: beatrice
-          path: |
-            ${{github.workspace}}/build/vst/beatrice_*/
-            !${{github.workspace}}/build/vst/beatrice_*.dir
+          path: build/vst/dist/beatrice_*_win.zip
+          archive: false
+
+  build-macos:
+    needs: prepare
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Build
+        run: >
+          make distribution
+          "BEATRICE_DEV_VERSION=${{ needs.prepare.outputs.beatrice_dev_version }}"
+          "BEATRICE_PROCESSOR_UID=${{ needs.prepare.outputs.processor_uid }}"
+          "BEATRICE_CONTROLLER_UID=${{ needs.prepare.outputs.controller_uid }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: build/vst/dist/beatrice_*_mac.zip
+          archive: false
