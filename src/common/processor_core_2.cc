@@ -12,7 +12,7 @@
 
 namespace beatrice::common {
 
-auto ProcessorCore2::GetVersion() const -> int { return 1; }
+auto ProcessorCore2::GetVersion() const -> int { return 2; }
 auto ProcessorCore2::Process(const float* const input, float* const output,
                              const int n_samples) -> ErrorCode {
   const auto fill_zero = [output, n_samples] {
