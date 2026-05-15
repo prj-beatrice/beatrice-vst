@@ -106,7 +106,7 @@ class ProcessorCore2 : public ProcessorCoreBase {
 
   std::filesystem::path model_file_;
   int target_speaker_ = 0;
-  int formant_shift_ = 0;
+  double formant_shift_ = 0.0;
   double pitch_shift_ = 0.0;
   int n_speakers_ = 0;
   double average_source_pitch_ = 52.0;
