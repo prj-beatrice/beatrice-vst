@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <limits>
 #include <random>
-#include <vector>
 
 #include "beatricelib/beatrice.h"
 
