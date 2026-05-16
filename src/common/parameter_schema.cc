@@ -33,11 +33,11 @@ const ParameterSchema kSchema = [] {
              try {
                const auto toml_data = toml::parse(std::filesystem::path(value));
                model_config = toml::get<ModelConfig>(toml_data);
-             } catch (const toml::file_io_error& e) {
+             } catch (const toml::file_io_error&) {
                return ErrorCode::kFileOpenError;
-             } catch (const toml::syntax_error& e) {
+             } catch (const toml::syntax_error&) {
                return ErrorCode::kTOMLSyntaxError;
-             } catch (const std::exception& e) {
+             } catch (const std::exception&) {
                return ErrorCode::kUnknownError;
              }
 

@@ -73,7 +73,7 @@ class ProcessorProxy {
     } catch (const toml::syntax_error) {
       error_code = ErrorCode::kTOMLSyntaxError;
       goto fail;
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
       error_code = ErrorCode::kUnknownError;
       goto fail;
     }
