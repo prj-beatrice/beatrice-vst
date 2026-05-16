@@ -557,7 +557,8 @@ void Editor::valueChanged(CControl* const pControl) {
     msg->setMessageID("param_change");
     msg->getAttributes()->setBinary("param_id", &vst_param_id,
                                     sizeof(vst_param_id));
-    msg->getAttributes()->setBinary("data", file.c_str(), file.size());
+    msg->getAttributes()->setBinary(
+        "data", file.c_str(), static_cast<Steinberg::uint32>(file.size()));
     controller->sendMessage(msg);
     msg->release();
   } else {

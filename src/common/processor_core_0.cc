@@ -261,7 +261,8 @@ auto ProcessorCore0::SetSpeakerMorphingWeight(int target_speaker_id,
   if (target_speaker_id < 0 || target_speaker_id >= kMaxNSpeakers) {
     return ErrorCode::kSpeakerIDOutOfRange;
   }
-  speaker_morphing_weights_[target_speaker_id] = morphing_weight;
+  speaker_morphing_weights_[target_speaker_id] =
+      static_cast<float>(morphing_weight);
   sph_avg_.SetWeights(n_speakers_, speaker_morphing_weights_.data());
   sph_avg_.GetResult(
       BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
