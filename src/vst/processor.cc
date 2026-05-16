@@ -115,6 +115,9 @@ auto PLUGIN_API Processor::process(ProcessData& data) -> tresult {
       ParamValue value;
       int sample_offset;
       const auto n_points = param_queue->getPointCount();
+      if (n_points <= 0) {
+        continue;
+      }
       if (param_queue->getPoint(n_points - 1, sample_offset, value) !=
           kResultTrue) {
         continue;

@@ -41,31 +41,31 @@ auto PLUGIN_API Controller::initialize(FUnknown* const context) -> tresult {
     if (const auto* const num_param =
             std::get_if<common::NumberParameter>(&param)) {
       parameters.addParameter(new LinearParameter(
-          VST3::StringConvert::convert(
+          Steinberg::Vst::StringConvert::convert(
               reinterpret_cast<const char*>(num_param->GetName().c_str()))
               .c_str(),
           vst_param_id,
-          VST3::StringConvert::convert(
+          Steinberg::Vst::StringConvert::convert(
               reinterpret_cast<const char*>(num_param->GetUnits().c_str()))
               .c_str(),
           num_param->GetMinValue(), num_param->GetMaxValue(),
           num_param->GetDefaultValue(), num_param->GetDivisions(),
           num_param->GetFlags(), kRootUnitId,
-          VST3::StringConvert::convert(
+          Steinberg::Vst::StringConvert::convert(
               reinterpret_cast<const char*>(num_param->GetShortName().c_str()))
               .c_str()));
     } else if (const auto* const list_param =
                    std::get_if<common::ListParameter>(&param)) {
       auto* const param = new StringListParameter(
-          VST3::StringConvert::convert(
+          Steinberg::Vst::StringConvert::convert(
               reinterpret_cast<const char*>(list_param->GetName().c_str()))
               .c_str(),
           vst_param_id, nullptr, list_param->GetFlags(), kRootUnitId,
-          VST3::StringConvert::convert(
+          Steinberg::Vst::StringConvert::convert(
               reinterpret_cast<const char*>(list_param->GetShortName().c_str()))
               .c_str());
       for (const auto& value : list_param->GetValues()) {
-        param->appendString(VST3::StringConvert::convert(
+        param->appendString(Steinberg::Vst::StringConvert::convert(
                                 reinterpret_cast<const char*>(value.c_str()))
                                 .c_str());
       }

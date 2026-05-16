@@ -12,7 +12,7 @@
 
 namespace beatrice::common {
 
-auto ProcessorCore2::GetVersion() const -> int { return 1; }
+auto ProcessorCore2::GetVersion() const -> int { return 2; }
 auto ProcessorCore2::Process(const float* const input, float* const output,
                              const int n_samples) -> ErrorCode {
   const auto fill_zero = [output, n_samples] {
@@ -478,7 +478,8 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
   if (target_speaker_id < 0 || target_speaker_id >= kMaxNSpeakers) {
     return ErrorCode::kSpeakerIDOutOfRange;
   }
-  speaker_morphing_weights_[target_speaker_id] = morphing_weight;
+  speaker_morphing_weights_[target_speaker_id] =
+      static_cast<float>(morphing_weight);
 
   if (target_speaker_id < n_speakers_) {
     /* 非ゼロ weight の個数が設定値を超えないように、大きい方から順番に残す */
@@ -493,7 +494,7 @@ auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
           speaker_morphing_weights_[indices[i]];
     }
     for (int i = kSphAvgMaxNSpeakers; i < n_speakers_; ++i) {
-      speaker_morphing_weights_pruned_[indices[i]] = 0.0;
+      speaker_morphing_weights_pruned_[indices[i]] = 0.0f;
     }
 
     // codebook 抽選用の分布を更新する。Process1 内で毎フレーム param() を
