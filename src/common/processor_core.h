@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2025 Project Beatrice and Contributors
+// Copyright (c) 2024-2026 Project Beatrice and Contributors
 
 #ifndef BEATRICE_COMMON_PROCESSOR_CORE_H_
 #define BEATRICE_COMMON_PROCESSOR_CORE_H_
