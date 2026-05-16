@@ -4,8 +4,6 @@
 
 #include "vst/editor.h"
 
-#include <windows.h>
-
 #include <algorithm>
 #include <cstring>
 #include <limits>
