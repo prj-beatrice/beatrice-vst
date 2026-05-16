@@ -1,4 +1,4 @@
-// Copyright (c) 2024-2025 Project Beatrice and Contributors
+// Copyright (c) 2024-2026 Project Beatrice and Contributors
 
 #include "common/parameter_state.h"
 
