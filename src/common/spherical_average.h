@@ -344,13 +344,16 @@ class SphericalAverage {
 
     for (size_t n = 0; n < N_; n++) {
       T cos_th = Dot(M, &p_[indices_[n] * M], q_.data());
+      // Clamp to [-1, 1] to guard against floating-point overshoot
+      cos_th = std::clamp(cos_th, static_cast<T>(-1), static_cast<T>(1));
       T theta = acos(cos_th);
       T inv_sinc_th = static_cast<T>(1.0) /
                       (Sinc(theta) + std::numeric_limits<T>::epsilon());
       sum_w_c_s += w_[n] * cos_th * inv_sinc_th;
       v_[n] = w_[n] * inv_sinc_th;
-      T a_n = -static_cast<T>(2.0) * w_[n] * theta /
-              sqrt(static_cast<T>(1.0) - cos_th * cos_th);
+      // a_n = -2 * w_n * theta / sin(theta) = -2 * v_n
+      // (using v_n already computed via the stable Sinc path above)
+      T a_n = -static_cast<T>(2.0) * v_[n];
       AddProductC(M, a_n, &p_[indices_[n] * M], g_.data());
     }
 
