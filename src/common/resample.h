@@ -56,6 +56,7 @@ class Buffer {
   void SetSize(const int new_siz) {
     siz_ = new_siz;
     data_.resize(new_siz);
+    data_.reserve(new_siz * 2);
   }
 
   void Push(const float value) {
@@ -278,6 +279,8 @@ class ConvertStreamFunctionFrequency {
   double original_frequency_;
   double target_frequency_;
   DownUpSamplerImpl down_up_sampler_;
+  std::vector<float> buf_io_;
+  std::vector<float> buf_work_;
 
  public:
   ConvertStreamFunctionFrequency(Func&& function,
@@ -297,18 +300,21 @@ class ConvertStreamFunctionFrequency {
   template <class... Context>
   auto operator()(const float* const input, float* const output, const int m,
                   Context&&... context) {
-    auto tmp_vector = std::vector<float>(input, input + m);
-    auto converted_input = std::vector<float>();
-    down_up_sampler_.ResampleIn(tmp_vector, converted_input);
+    // Pre-allocated buffers to avoid heap allocation on the audio thread.
+    // Sized on first call; subsequent calls reuse capacity.
+    buf_io_.resize(m);
+    std::memcpy(buf_io_.data(), input, m * sizeof(float));
 
-    const auto n = static_cast<int>(converted_input.size());
-    auto converted_output = std::vector<float>(n);
-    function_(std::to_address(converted_input.begin()),
-              std::to_address(converted_output.begin()), n,
+    down_up_sampler_.ResampleIn(buf_io_, buf_work_);
+
+    const auto n = static_cast<int>(buf_work_.size());
+    buf_io_.resize(n);  // reuse buf_io_ for output of function_
+    function_(buf_work_.data(), buf_io_.data(), n,
               std::forward<Context>(context)...);
 
-    down_up_sampler_.ResampleOut(converted_output, tmp_vector);
-    std::memcpy(output, std::to_address(tmp_vector.begin()), m * sizeof(float));
+    down_up_sampler_.ResampleOut(buf_io_, buf_work_);
+    // buf_work_ now contains the final result, size should equal m
+    std::memcpy(output, buf_work_.data(), m * sizeof(float));
   }
 
   [[nodiscard]] auto IsReady() const -> bool {
