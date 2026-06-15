@@ -1,7 +1,7 @@
 BEATRICE_DEV_VERSION ?= ON
 
 ifeq ($(OS),Windows_NT)
-CMAKE_GENERATOR ?= Visual Studio 17 2022
+CMAKE_GENERATOR ?= Visual Studio 18 2026
 BEATRICE_LIBRARY := lib/beatricelib/beatrice.lib
 CMAKE_CONFIGURE_ARGS := -A x64 -DSMTG_USE_STATIC_CRT=ON
 else
