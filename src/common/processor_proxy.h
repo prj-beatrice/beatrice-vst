@@ -4,6 +4,7 @@
 #define BEATRICE_COMMON_PROCESSOR_PROXY_H_
 
 #include <memory>
+#include <stdexcept>
 
 #include "common/error.h"
 #include "common/model_config.h"
@@ -43,6 +44,9 @@ class ProcessorProxy {
   }
   auto LoadModel(const std::filesystem::path& file) -> ErrorCode {
     auto error_code = ErrorCode::kSuccess;
+    if (file.empty()) {
+      goto fail;
+    }
     if (!std::filesystem::exists(file)) {
       error_code = ErrorCode::kFileOpenError;
       goto fail;
@@ -61,17 +65,28 @@ class ProcessorProxy {
           core_ = std::make_unique<ProcessorCore2>(sample_rate_);
           break;
         default:
+          error_code = ErrorCode::kInvalidModelConfig;
           goto fail;
       }
       if (const auto err = core_->LoadModel(model_config, file);
           err != ErrorCode::kSuccess) {
-        return err;
+        error_code = err;
+        goto fail;
       }
-    } catch (const toml::file_io_error) {
+    } catch (const toml::file_io_error&) {
       error_code = ErrorCode::kFileOpenError;
       goto fail;
-    } catch (const toml::syntax_error) {
+    } catch (const toml::syntax_error&) {
       error_code = ErrorCode::kTOMLSyntaxError;
+      goto fail;
+    } catch (const toml::type_error&) {
+      error_code = ErrorCode::kInvalidModelConfig;
+      goto fail;
+    } catch (const std::invalid_argument&) {
+      error_code = ErrorCode::kInvalidModelConfig;
+      goto fail;
+    } catch (const std::out_of_range&) {
+      error_code = ErrorCode::kInvalidModelConfig;
       goto fail;
     } catch (const std::exception&) {
       error_code = ErrorCode::kUnknownError;

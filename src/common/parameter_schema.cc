@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <filesystem>
+#include <stdexcept>
 
 #include "common/controller_core.h"
 #include "common/processor_core.h"
@@ -29,6 +30,9 @@ const ParameterSchema kSchema = [] {
        StringParameter(
            u8"Model"s, u8""s, false,
            [](ControllerCore& controller, const std::u8string& value) {
+             if (value.empty()) {
+               return ErrorCode::kSuccess;
+             }
              ModelConfig model_config;
              try {
                const auto toml_data = toml::parse(std::filesystem::path(value));
@@ -37,8 +41,17 @@ const ParameterSchema kSchema = [] {
                return ErrorCode::kFileOpenError;
              } catch (const toml::syntax_error&) {
                return ErrorCode::kTOMLSyntaxError;
+             } catch (const toml::type_error&) {
+               return ErrorCode::kInvalidModelConfig;
+             } catch (const std::invalid_argument&) {
+               return ErrorCode::kInvalidModelConfig;
+             } catch (const std::out_of_range&) {
+               return ErrorCode::kInvalidModelConfig;
              } catch (const std::exception&) {
                return ErrorCode::kUnknownError;
+             }
+             if (model_config.model.VersionInt() < 0) {
+               return ErrorCode::kInvalidModelConfig;
              }
 
              // Voice
@@ -65,29 +78,20 @@ const ParameterSchema kSchema = [] {
 
              // Voice Morph の AverageTargetPitch を計算
              // 今のところは各 Voice の値の単純平均を採用することとする
-             auto voice_counter = kMaxNSpeakers;
-             for (auto i = 0; i < kMaxNSpeakers; ++i) {
-               const auto& voice = model_config.voices[i];
-               if (voice.name.empty() && voice.description.empty() &&
-                   voice.portrait.path.empty() &&
-                   voice.portrait.description.empty()) {
-                 voice_counter = i;
-                 break;
-               }
-             }
+             const auto voice_count = GetVoiceCount(model_config);
              double morphed_average_pitch = 0;
-             for (auto i = 0; i < voice_counter; ++i) {
+             for (auto i = 0; i < voice_count; ++i) {
                morphed_average_pitch += model_config.voices[i].average_pitch;
              }
-             morphed_average_pitch /= voice_counter;
+             morphed_average_pitch /= voice_count;
              controller.parameter_state_.SetValue(
                  static_cast<ParameterID>(
                      static_cast<int>(ParameterID::kAverageTargetPitchBase) +
-                     voice_counter),
+                     voice_count),
                  morphed_average_pitch);
              controller.updated_parameters_.push_back(static_cast<ParameterID>(
                  static_cast<int>(ParameterID::kAverageTargetPitchBase) +
-                 voice_counter));
+                 voice_count));
 
              // kVoiceMorphWeightss
              for (auto i = 0; i < kMaxNSpeakers; ++i) {

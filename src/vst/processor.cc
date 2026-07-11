@@ -242,9 +242,10 @@ auto PLUGIN_API Processor::setState(IBStream* const state) -> tresult {
     return kResultFalse;
   }
   auto iss = std::istringstream(state_string, std::ios::binary);
-  if (vc_core_.Read(iss) != common::ErrorCode::kSuccess) {
-    return kResultFalse;
-  }
+  // Controller 側の状態との整合性を維持するため、
+  // Controller 側や Host から送られた設定値は、たとえ不正なものでも
+  // なるべくそのまま保持する。
+  [[maybe_unused]] const auto error_code = vc_core_.Read(iss);
   return kResultTrue;
 }
 
@@ -288,8 +289,11 @@ auto PLUGIN_API Processor::notify(IMessage* const message) -> tresult {
     value.resize(siz);
     std::memcpy(value.data(), data, siz);
     const auto param_id = static_cast<common::ParameterID>(vst_param_id);
-    const auto error_code = vc_core_.SetParameter(param_id, value);
-    assert(error_code == common::ErrorCode::kSuccess);
+    // Controller 側の状態との整合性を維持するため、
+    // Controller 側や Host から送られた設定値は、たとえ不正なものでも
+    // なるべくそのまま保持する。
+    [[maybe_unused]] const auto error_code =
+        vc_core_.SetParameter(param_id, value);
     return kResultTrue;
   }
   return AudioEffect::notify(message);

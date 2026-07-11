@@ -542,14 +542,17 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto file = control->GetPath().u8string();
     auto error_code = str_param->ControllerSetValue(core, file);
     if (error_code == common::ErrorCode::kFileOpenError ||
-        error_code == common::ErrorCode::kTOMLSyntaxError) {
+        error_code == common::ErrorCode::kTOMLSyntaxError ||
+        error_code == common::ErrorCode::kInvalidModelConfig) {
       // Controller とは別に Editor::SyncModelDescription でも改めて
       // ファイルを読み込もうとして失敗するので、ここではエラー処理しない
       error_code = common::ErrorCode::kSuccess;
     }
     assert(error_code == common::ErrorCode::kSuccess);
-    error_code = controller->SetStringParameter(vst_param_id, file);
-    assert(error_code == common::ErrorCode::kSuccess);
+    if (error_code != common::ErrorCode::kSuccess) {
+      return;
+    }
+    controller->SetStringParameter(vst_param_id, file);
     // processor に通知
     auto* const msg = controller->allocateMessage();
     msg->setMessageID("param_change");
