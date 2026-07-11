@@ -44,6 +44,10 @@ add_subdirectory(lib/vst3sdk)
 
 smtg_enable_vst3_sdk()
 
+if(SMTG_MAC)
+    target_compile_options(vstgui PRIVATE -Wno-error=deprecated-declarations)
+endif()
+
 configure_file(src/vst/metadata.h.in src/vst/metadata.h @ONLY)
 configure_file(resource/Info.plist.in resource/Info.plist @ONLY)
 set(SMTG_PACKAGE_ICON_PATH ${CMAKE_CURRENT_SOURCE_DIR}/resource/icon.ico)
