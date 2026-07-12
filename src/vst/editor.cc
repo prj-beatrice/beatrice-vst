@@ -1,36 +1,66 @@
 // Copyright (c) 2024-2026 Project Beatrice and Contributors
 
-// TODO(refactor)
-
 #include "vst/editor.h"
 
 #include <algorithm>
+#include <array>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <exception>
+#include <filesystem>
 #include <memory>
+#include <optional>
+#include <string>
+#include <variant>
+#include <vector>
 
 #include "beatricelib/beatrice.h"
+#include "toml11/single_include/toml.hpp"
+#include "vst3sdk/pluginterfaces/base/fplatform.h"
+#include "vst3sdk/pluginterfaces/base/fstrdefs.h"
+#include "vst3sdk/pluginterfaces/base/ftypes.h"
+#include "vst3sdk/pluginterfaces/base/funknown.h"
+#include "vst3sdk/pluginterfaces/gui/iplugview.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
+#include "vst3sdk/public.sdk/source/vst/vstguieditor.h"
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cbitmap.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cbitmapfilter.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cframe.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/coptionmenu.h"
-#include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cviewcontainer.h"
 #include "vst3sdk/vstgui4/vstgui/lib/platform/platformfactory.h"
+#include "vst3sdk/vstgui4/vstgui/lib/vstguibase.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
 #include "common/error.h"
+#include "common/model_config.h"
 #include "common/parameter_schema.h"
-#include "common/voice_morph_parameter.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
+#include "vst/editor_description.h"
+#include "vst/editor_views.h"
+#include "vst/editor_voice_selector.h"
 #include "vst/parameter.h"
+#include "vst/surface_texture.h"
 
 #ifdef BEATRICE_ONLY_FOR_LINTER_DO_NOT_COMPILE_WITH_THIS
 #include "vst/metadata.h.in"
 #else
 #include "metadata.h"  // NOLINT(build/include_subdir)
+#endif
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>  // NOLINT(misc-include-cleaner)
+#else
+#include <cstdlib>
 #endif
 
 namespace beatrice::vst {
@@ -42,23 +72,149 @@ using Steinberg::Vst::StringListParameter;
 using VSTGUI::CFontDesc;
 using VSTGUI::CFrame;
 using VSTGUI::COptionMenu;
+using VSTGUI::CView;
 using VSTGUI::CViewContainer;
 using VSTGUI::getPlatformFactory;
 using VSTGUI::kBoldFace;
-using VSTGUI::kNormalFont;
 
 // NOLINTNEXTLINE(readability-identifier-naming)
 namespace BitmapFilter = VSTGUI::BitmapFilter;
+
+namespace {
+
+auto HasEnvironmentVariable(const char* const name) -> bool {
+#if defined(_WIN32)
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  return GetEnvironmentVariableA(name, nullptr, 0) > 0;
+#else
+  return std::getenv(name) != nullptr;
+#endif
+}
+
+auto GetScreenshotModelPath() -> std::u8string {
+#if defined(_WIN32)
+  const auto size =
+      // NOLINTNEXTLINE(misc-include-cleaner)
+      GetEnvironmentVariableW(L"BEATRICE_SCREENSHOT_MODEL_PATH", nullptr, 0);
+  if (size == 0) {
+    return {};
+  }
+  auto value = std::wstring(size, L'\0');
+  const auto copied =
+      // NOLINTNEXTLINE(misc-include-cleaner)
+      GetEnvironmentVariableW(L"BEATRICE_SCREENSHOT_MODEL_PATH", value.data(),
+                              size);
+  if (copied == 0) {
+    return {};
+  }
+  value.resize(copied);
+  const auto value_utf8 =
+      Steinberg::Vst::StringConvert::convert(Steinberg::wscast(value.c_str()));
+#else
+  const auto* const value = std::getenv("BEATRICE_SCREENSHOT_MODEL_PATH");
+  if (!value || value[0] == '\0') {
+    return {};
+  }
+  const auto value_utf8 = std::string(value);
+#endif
+  return {value_utf8.begin(), value_utf8.end()};
+}
+
+auto ScaleBitmap(CBitmap* const bitmap, const int width, const int height)
+    -> SharedPointer<CBitmap> {
+  const auto scale =
+      VSTGUI::owned(BitmapFilter::Factory::getInstance().createFilter(
+          BitmapFilter::Standard::kScaleBilinear));
+  scale->setProperty(BitmapFilter::Standard::Property::kInputBitmap, bitmap);
+  scale->setProperty(BitmapFilter::Standard::Property::kOutputRect,
+                     CRect(0, 0, width, height));
+  if (!scale->run()) {
+    return nullptr;
+  }
+  auto* const scaled_bitmap_obj =
+      scale->getProperty(BitmapFilter::Standard::Property::kOutputBitmap)
+          .getObject();
+  auto* const scaled_bitmap = dynamic_cast<CBitmap*>(scaled_bitmap_obj);
+  if (!scaled_bitmap) {
+    return nullptr;
+  }
+  return VSTGUI::shared(scaled_bitmap);
+}
+
+void ApplyRoundedMask(CBitmap* const bitmap, const double radius) {
+  if (!bitmap || radius <= 0.0) {
+    return;
+  }
+  auto access = VSTGUI::owned(CBitmapPixelAccess::create(bitmap, false));
+  if (!access) {
+    return;
+  }
+  const auto width = static_cast<double>(access->getBitmapWidth());
+  const auto height = static_cast<double>(access->getBitmapHeight());
+  const auto r = std::min(radius, std::min(width, height) / 2.0);
+  for (uint32_t y = 0; y < access->getBitmapHeight(); ++y) {
+    for (uint32_t x = 0; x < access->getBitmapWidth(); ++x) {
+      const auto px = static_cast<double>(x) + 0.5;
+      const auto py = static_cast<double>(y) + 0.5;
+      auto coverage = 1.0;
+      auto cx = px;
+      auto cy = py;
+      auto in_corner = false;
+      if (px < r && py < r) {
+        cx = r;
+        cy = r;
+        in_corner = true;
+      } else if (px > width - r && py < r) {
+        cx = width - r;
+        cy = r;
+        in_corner = true;
+      } else if (px < r && py > height - r) {
+        cx = r;
+        cy = height - r;
+        in_corner = true;
+      } else if (px > width - r && py > height - r) {
+        cx = width - r;
+        cy = height - r;
+        in_corner = true;
+      }
+      if (in_corner) {
+        const auto distance = std::hypot(px - cx, py - cy);
+        coverage = std::clamp(r + 0.5 - distance, 0.0, 1.0);
+      }
+      if (coverage < 1.0) {
+        access->setPosition(x, y);
+        CColor color;
+        access->getColor(color);
+        color.alpha = static_cast<uint8_t>(
+            std::clamp(std::round(static_cast<double>(color.alpha) * coverage),
+                       0.0, 255.0));
+        access->setColor(color);
+      }
+    }
+  }
+}
+
+auto MakeRoundedBitmap(CBitmap* const source, const int width, const int height,
+                       const double radius) -> SharedPointer<CBitmap> {
+  auto bitmap = ScaleBitmap(source, width, height);
+  if (bitmap) {
+    ApplyRoundedMask(bitmap.get(), radius);
+  }
+  return bitmap;
+}
+
+}  // namespace
 
 Editor::Editor(void* const controller)
     : VSTGUIEditor(controller),
       font_(new CFontDesc("Segoe UI", 14)),
       font_bold_(new CFontDesc("Segoe UI", 14, kBoldFace)),
       font_description_(new CFontDesc("Meiryo", 12)),
-      font_version_(new CFontDesc("Segoe UI", 12)),
-      tab_view_(),
-      portrait_view_(),
-      portrait_description_() {
+      font_small_(new CFontDesc("Segoe UI", 11)),
+      font_heading_(new CFontDesc("Segoe UI", 13, kBoldFace)),
+      font_strong_(new CFontDesc("Segoe UI", 16, kBoldFace)),
+      page_views_(),
+      page_tabs_() {
   setRect(ViewRect(0, 0, kWindowWidth, kWindowHeight));
 }
 
@@ -66,7 +222,9 @@ Editor::~Editor() {
   font_->forget();
   font_bold_->forget();
   font_description_->forget();
-  font_version_->forget();
+  font_small_->forget();
+  font_heading_->forget();
+  font_strong_->forget();
 }
 
 auto PLUGIN_API Editor::open(void* const parent,
@@ -78,116 +236,513 @@ auto PLUGIN_API Editor::open(void* const parent,
   if (!frame) {
     return false;
   }
+  auto* const beatrice_controller = static_cast<Controller*>(getController());
 
-  // 背景を設定
-  frame->setBackgroundColor(kDarkColorScheme.background);
+  // テクスチャ設定
+  const auto frame_texture = SurfaceTextureParams{
+      .base = CColor(0x09, 0x09, 0x09),
+      .low_frequency_strength = 0.9,
+      .fine_grain_strength = 0.9,
+      .baked_grain_strength = 0.5,
+  };
+  const auto header_texture = SurfaceTextureParams{
+      .base = CColor(0x12, 0x11, 0x0f),
+      .low_frequency_strength = 5.9,
+      .fine_grain_strength = 0.95,
+      .baked_grain_strength = 1.08,
+  };
+  const auto tab_texture = SurfaceTextureParams{
+      .base = CColor(0x1a, 0x19, 0x18),
+      .low_frequency_strength = 17.6,
+      .fine_grain_strength = 0.95,
+      .baked_grain_strength = 1.08,
+  };
+  const auto page_texture = SurfaceTextureParams{
+      .base = CColor(0x19, 0x19, 0x18),
+      .low_frequency_strength = 1.0,
+      .fine_grain_strength = 0.7,
+      .baked_grain_strength = 0.45,
+  };
+  const auto panel_texture = SurfaceTextureParams{
+      .base = CColor(0x1d, 0x1d, 0x1b),
+      .low_frequency_strength = 4.7,
+      .fine_grain_strength = 0.70,
+      .baked_grain_strength = 0.86,
+  };
+  const auto control_texture = SurfaceTextureParams{
+      .base = CColor(0x10, 0x10, 0x0f),
+      .low_frequency_strength = 5.9,
+      .fine_grain_strength = 0.95,
+      .baked_grain_strength = 1.08,
+  };
+  const auto surface_noise = SurfaceNoiseParams{};
+  const auto surface_noise_maps =
+      std::make_shared<SurfaceNoiseMaps>(surface_noise);
+  const auto frame_surface =
+      VSTGUI::owned(new SurfaceBitmap(frame_texture, surface_noise_maps));
+  const auto header_surface = VSTGUI::owned(
+      new SurfaceBitmap(header_texture, surface_noise_maps, 512, 82));
+  const auto tab_surface = VSTGUI::owned(
+      new SurfaceBitmap(tab_texture, surface_noise_maps, 512, 52));
+  const auto page_surface =
+      VSTGUI::owned(new SurfaceBitmap(page_texture, surface_noise_maps));
+  const auto panel_surface = VSTGUI::owned(
+      new SurfaceBitmap(panel_texture, surface_noise_maps, 512, 480));
+  const auto control_surface = VSTGUI::owned(
+      new SurfaceBitmap(control_texture, surface_noise_maps, 512, 48));
 
-  // ヘッダーを作る
+  // ルートビュー
+  auto* const root = new SurfacePanel(CRect(0, 0, kWindowWidth, kWindowHeight),
+                                      frame_surface, kTransparentCColor, 0.0);
+  frame->addView(root);
+
+  // UI 生成ヘルパー
+  const auto make_label =
+      [&](CViewContainer* parent, const CRect& rect, const char* text,
+          CFontRef font, const CColor& color,
+          CHoriTxtAlign align = CHoriTxtAlign::kLeftText) -> CTextLabel* {
+    auto* label = new CTextLabel(rect, text, nullptr, CParamDisplay::kNoFrame);
+    label->setBackColor(kTransparentCColor);
+    label->setFont(font);
+    label->setFontColor(color);
+    label->setHoriAlign(align);
+    parent->addView(label);
+    return label;
+  };
+  const auto register_control = [&](const ParamID param_id,
+                                    CControl* const control) -> void {
+    const auto [it, inserted] = controls_.emplace(param_id, control);
+    assert(inserted);
+    if (!inserted) {
+      it->second = control;
+    }
+  };
+  const auto add_title = [&](CViewContainer* parent, const CRect& rect,
+                             const char* text) -> CTextLabel* {
+    return make_label(parent, rect, text, font_heading_,
+                      CColor(0xc1, 0xbe, 0xb8), CHoriTxtAlign::kCenterText);
+  };
+  const auto add_panel = [&](CViewContainer* parent,
+                             const CRect& rect) -> SurfacePanel* {
+    auto* panel = new SurfacePanel(rect, panel_surface,
+                                   CColor(0xff, 0xff, 0xff, 0x0a), 2.0);
+    parent->addView(panel);
+    return panel;
+  };
+  const auto add_slider = [&](CViewContainer* parent, ParamID param_id,
+                              const CRect& rect, int precision, float wheel_inc,
+                              float fine_wheel_inc) -> Slider* {
+    auto* const param =
+        static_cast<LinearParameter*>(controller->getParameterObject(param_id));
+    auto* const slider_bmp = new MonotoneBitmap(
+        static_cast<int>(rect.getWidth()), static_cast<int>(rect.getHeight()),
+        kTransparentCColor, kTransparentCColor);
+    auto* const handle_bmp = new MonotoneBitmap(
+        kSliderKnobWidth, 18, CColor(0xc3, 0xa0, 0x66), kTransparentCColor);
+    const auto title =
+        Steinberg::Vst::StringConvert::convert(param->getInfo().title);
+    auto* slider = new Slider(
+        rect, this, static_cast<int>(param_id), static_cast<int>(rect.left),
+        static_cast<int>(rect.right - handle_bmp->getWidth()), handle_bmp,
+        slider_bmp,
+        Steinberg::Vst::StringConvert::convert(param->getInfo().units),
+        font_small_, font_bold_, title, precision);
+    slider->setMin(param->GetMinPlain());
+    slider->setMax(param->GetMaxPlain());
+    slider->setWheelInc(wheel_inc);
+    slider->setFineWheelInc(fine_wheel_inc);
+    slider->setDefaultValue(
+        param->toPlain(param->getInfo().defaultNormalizedValue));
+    slider->setValue(
+        static_cast<float>(param->toPlain(param->getNormalized())));
+    parent->addView(slider);
+    register_control(param_id, slider);
+    slider_bmp->forget();
+    handle_bmp->forget();
+    return slider;
+  };
+  const auto add_option_menu =
+      [&](CViewContainer* parent, ParamID param_id, const CRect& rect,
+          const CColor& frame_color = CColor(0xe2, 0xba, 0x79, 0x16),
+          const CColor& back_color = CColor(0x1b, 0x1a, 0x19)) -> COptionMenu* {
+    auto* const param = static_cast<StringListParameter*>(
+        controller->getParameterObject(param_id));
+    auto* const bmp = new MonotoneBitmap(static_cast<int>(rect.getWidth()),
+                                         static_cast<int>(rect.getHeight()),
+                                         back_color, frame_color, 3.0);
+    auto* const control =
+        new COptionMenu(rect, this, static_cast<int>(param_id), bmp);
+    bmp->forget();
+    for (auto i = 0; i <= param->getInfo().stepCount; ++i) {
+      String128 tmp_string128;
+      param->toString(param->toNormalized(i), tmp_string128);
+      const auto name = Steinberg::Vst::StringConvert::convert(tmp_string128);
+      control->addEntry(name.c_str());
+    }
+    control->setValue(static_cast<float>(
+        param->toPlain(controller->getParamNormalized(param_id))));
+    control->setFont(font_);
+    control->setFontColor(CColor(0xca, 0xc7, 0xc1));
+    parent->addView(control);
+    auto* const chevron = new ChevronView(
+        CRect(rect.right - 24, rect.top + 8, rect.right - 8, rect.bottom - 8),
+        CColor(0xd6, 0xa8, 0x57));
+    parent->addView(chevron);
+    register_control(param_id, control);
+    return control;
+  };
+
+  // ヘッダー
   auto* const header =
-      new CViewContainer(CRect(0, 0, kWindowWidth, kHeaderHeight));
-  header->setBackgroundColor(kDarkColorScheme.surface_0);
-  frame->addView(header);
-
-  // ロゴを表示する
-  auto* const logo_view = new CView(CRect(0, 0, 132, 44).offset(34, 7));
+      new SurfacePanel(CRect(0, 0, kWindowWidth, 82), header_surface,
+                       CColor(0xff, 0xff, 0xff, 0x10), 0.0);
+  root->addView(header);
+  auto* const logo_view = new CView(CRect(26, 19, 158, 63));
   auto* const logo_bmp = new CBitmap("logo.png");
   logo_view->setBackground(logo_bmp);
   header->addView(logo_view);
   logo_bmp->forget();
+  make_label(header, CRect(178, 32, 310, 54), "VOICE CONVERSION", font_small_,
+             CColor(0xd6, 0xa8, 0x57));
 
-  // バージョンを表示する
-  auto* const version_label = new CTextLabel(
-      CRect(0, 0, 200, kHeaderHeight).offset(kWindowWidth - 200 - 17, 0),
-      (UTF8String("Ver. ") + FULL_VERSION_STR).data(), nullptr,
-      CParamDisplay::kNoFrame);
-  version_label->setBackColor(kTransparentCColor);
-  version_label->setFont(font_version_);
-  version_label->setFontColor(kDarkColorScheme.on_surface);
-  version_label->setHoriAlign(CHoriTxtAlign::kRightText);
-  header->addView(version_label);
+  auto* const model_panel =
+      new SurfacePanel(CRect(380, 18, 900, 66), control_surface,
+                       CColor(0xff, 0xff, 0xff, 0x0e), 3.0);
+  header->addView(model_panel);
+  make_label(model_panel, CRect(12, 17, 76, 31), "MODEL", font_small_,
+             CColor(0xd6, 0xa8, 0x57));
+  auto* const model_selector =
+      new FileSelector(CRect(80, 0, 440, 48), this,
+                       static_cast<int>(ParameterID::kModel), nullptr);
+  model_selector->setBackColor(kTransparentCColor);
+  model_selector->setStyle(CParamDisplay::kNoFrame);
+  model_selector->setFont(font_strong_);
+  model_selector->setFontColor(CColor(0xca, 0xc7, 0xc1));
+  model_selector->setHoriAlign(CHoriTxtAlign::kCenterText);
+  model_panel->addView(model_selector);
+  register_control(static_cast<ParamID>(ParameterID::kModel), model_selector);
+  model_name_label_ = model_selector;
 
-  // フッターを作る
-  auto* const footer = new CViewContainer(
-      CRect(0, kWindowHeight - kFooterHeight, kWindowWidth, kWindowHeight));
-  footer->setBackgroundColor(kDarkColorScheme.surface_0);
-  frame->addView(footer);
+  // タブ
+  auto* const tabs =
+      new SurfacePanel(CRect(0, 82, kWindowWidth, 134), tab_surface,
+                       CColor(0xff, 0xff, 0xff, 0x12), 0.0);
+  root->addView(tabs);
+  tab_indicator_ = new TabAccentView(CRect(528, 0, 640, 52));
+  tabs->addView(tab_indicator_);
+  auto add_tab = [&](int index, const CRect& rect, const char* text) -> void {
+    auto* tab = new GlowingActionLabel(
+        rect, text, [this, index]() -> void { SelectPage(index); });
+    tab->setBackColor(kTransparentCColor);
+    tab->setFont(font_);
+    tab->setFontColor(CColor(0xb8, 0xb5, 0xaf));
+    tab->setHoriAlign(CHoriTxtAlign::kCenterText);
+    tab->setStyle(CParamDisplay::kNoFrame);
+    tabs->addView(tab);
+    page_tabs_[index] = tab;
+  };
+  add_tab(0, CRect(528, 0, 640, 52), "MAIN");
+  add_tab(1, CRect(640, 0, 752, 52), "TUNING");
+  make_label(tabs, CRect(1070, 15, 1252, 37),
+             (UTF8String("Ver. ") + FULL_VERSION_STR).data(), font_small_,
+             CColor(0x77, 0x74, 0x70), CHoriTxtAlign::kRightText);
 
-  auto context = Context();  // オフセット設定
-  BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_1);
-  BeginGroup(context, u8"General");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kInputGain), 1, 1.0f,
-             0.1f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kOutputGain), 1, 1.0f,
-             0.1f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kAverageSourcePitch), 2,
-             1.0f, 0.125f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMinSourcePitch), 2,
-             1.0f, 0.125f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kMaxSourcePitch), 2,
-             1.0f, 0.125f);
-  EndGroup(context);
-  BeginGroup(context, u8"Pitch Shift");
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchShift), 2, 1.0f,
-             0.125f);
-  MakeCombobox(context, static_cast<ParamID>(ParameterID::kLock),
-               kTransparentCColor, kDarkColorScheme.on_surface);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kIntonationIntensity),
-             1, 0.5f, 0.1f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kPitchCorrection), 1,
-             0.5f, 0.1f);
-  MakeCombobox(context, static_cast<ParamID>(ParameterID::kPitchCorrectionType),
-               kTransparentCColor, kDarkColorScheme.on_surface);
-  EndGroup(context);
-  EndColumn(context);
+  // ページコンテナ
+  auto* const main_page = new SurfacePanel(
+      CRect(0, 134, 1280, 720), page_surface, kTransparentCColor, 0.0);
+  root->addView(main_page);
+  page_views_[0] = main_page;
+  auto* const tuning_page = new SurfacePanel(
+      CRect(0, 134, 1280, 720), page_surface, kTransparentCColor, 0.0);
+  root->addView(tuning_page);
+  page_views_[1] = tuning_page;
 
-  BeginColumn(context, kColumnWidth, kDarkColorScheme.surface_2);
-  BeginGroup(context, u8"Model");
-  MakeFileSelector(context, static_cast<ParamID>(ParameterID::kModel));
-  MakeCombobox(context, static_cast<ParamID>(ParameterID::kVoice),
-               kDarkColorScheme.primary, kDarkColorScheme.on_primary);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kFormantShift), 2, 1.0f,
-             0.5f);
-  MakeSlider(context, static_cast<ParamID>(ParameterID::kVQNumNeighbors), 0,
-             1.0f, 1.0f);
-  MakeModelVoiceDescription(context);
-  EndGroup(context);
-  EndColumn(context);
+  // Main ページ左
+  auto* gain_panel = add_panel(main_page, CRect(14, 10, 292, 168));
+  add_title(gain_panel, CRect(0, 10, 278, 32), "GAIN");
+  add_slider(gain_panel, static_cast<ParamID>(ParameterID::kInputGain),
+             CRect(17, 45, 261, 88), 1, 1.0f, 0.1f);
+  add_slider(gain_panel, static_cast<ParamID>(ParameterID::kOutputGain),
+             CRect(17, 102, 261, 145), 1, 1.0f, 0.1f);
 
-  BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
-  MakePortraitView(context);
-  MakePortraitDescription(context);
-  EndTabColumn(context);
+  auto* pitch_panel = add_panel(main_page, CRect(14, 178, 292, 340));
+  add_title(pitch_panel, CRect(0, 12, 278, 34), "PITCH");
+  add_slider(pitch_panel, static_cast<ParamID>(ParameterID::kPitchShift),
+             CRect(17, 48, 261, 91), 2, 1.0f, 0.125f);
+  make_label(pitch_panel, CRect(17, 101, 80, 119), "Lock", font_small_,
+             CColor(0xb8, 0xb5, 0xaf));
+  add_option_menu(pitch_panel, static_cast<ParamID>(ParameterID::kLock),
+                  CRect(17, 123, 261, 149));
 
-  BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
-  EndTabColumn(context);
+  auto* source_panel = add_panel(main_page, CRect(14, 350, 292, 572));
+  add_title(source_panel, CRect(0, 13, 278, 35), "SOURCE PITCH");
+  add_slider(source_panel,
+             static_cast<ParamID>(ParameterID::kAverageSourcePitch),
+             CRect(17, 60, 261, 103), 2, 1.0f, 0.125f);
+  add_slider(source_panel, static_cast<ParamID>(ParameterID::kMinSourcePitch),
+             CRect(17, 112, 261, 155), 2, 1.0f, 0.125f);
+  add_slider(source_panel, static_cast<ParamID>(ParameterID::kMaxSourcePitch),
+             CRect(17, 164, 261, 207), 2, 1.0f, 0.125f);
 
-  // 1 要素 1 クラスの方が良かったのか？？？
+  // Main ページ中央
+  auto* portrait_panel =
+      new SurfacePanel(CRect(302, 10, 782, 490), panel_surface,
+                       CColor(0xd6, 0xa8, 0x57, 0x24), 3.0);
+  main_page->addView(portrait_panel);
+  portrait_view_ = new CView(CRect(0, 0, 480, 480));
+  portrait_panel->addView(portrait_view_);
+  unloaded_logo_view_ = new CView(CRect(174, 218, 306, 262));
+  auto* const unloaded_logo = new CBitmap("logo.png");
+  unloaded_logo_view_->setBackground(unloaded_logo);
+  unloaded_logo_view_->setVisible(false);
+  portrait_panel->addView(unloaded_logo_view_);
+  unloaded_logo->forget();
+
+  portrait_description_pane_ = new DescriptionPane(
+      CRect(302, 500, 782, 572), panel_surface, CColor(0xff, 0xff, 0xff, 0x0a),
+      2.0, "PORTRAIT DESCRIPTION", CRect(14, 8, 466, 26),
+      CRect(14, 35, 469, 68), font_heading_, font_description_,
+      CColor(0xc1, 0xbe, 0xb8), CColor(0xbb, 0xb8, 0xb2),
+      CRect(220, 224, 864, 701),
+      [this](const char* const title, const std::u8string& text,
+             const CRect popup_rect) -> void {
+        ShowDescriptionPopup(title, text, popup_rect);
+      });
+  main_page->addView(portrait_description_pane_);
+
+  // Main ページ右
+  auto* voice_panel = add_panel(main_page, CRect(792, 10, 1266, 244));
+  add_title(voice_panel, CRect(0, 12, 473, 34), "VOICE");
+  auto* voice_menu =
+      add_option_menu(voice_panel, static_cast<ParamID>(ParameterID::kVoice),
+                      CRect(16, 40, 458, 98), CColor(0x44, 0x38, 0x22),
+                      CColor(0x11, 0x10, 0x0f));
+  voice_menu->setMouseEnabled(false);
+  voice_menu->setFontColor(kTransparentCColor);
+  voice_selector_ =
+      new VoiceSelectorView(CRect(16, 40, 458, 98), root, voice_menu,
+                            panel_surface, font_, font_bold_);
+  voice_panel->addView(voice_selector_);
+  add_slider(voice_panel, static_cast<ParamID>(ParameterID::kFormantShift),
+             CRect(16, 118, 458, 161), 2, 1.0f, 0.5f);
+  add_slider(voice_panel, static_cast<ParamID>(ParameterID::kVQNumNeighbors),
+             CRect(16, 176, 458, 219), 0, 1.0f, 1.0f);
+
+  model_description_pane_ = new DescriptionPane(
+      CRect(792, 254, 1266, 410), panel_surface, CColor(0xff, 0xff, 0xff, 0x0a),
+      2.0, "MODEL DESCRIPTION", CRect(15, 12, 458, 30), CRect(15, 43, 462, 146),
+      font_heading_, font_description_, CColor(0xc1, 0xbe, 0xb8),
+      CColor(0xbb, 0xb8, 0xb2), CRect(622, 224, 1266, 701),
+      [this](const char* const title, const std::u8string& text,
+             const CRect popup_rect) -> void {
+        ShowDescriptionPopup(title, text, popup_rect);
+      });
+  main_page->addView(model_description_pane_);
+
+  voice_description_pane_ = new DescriptionPane(
+      CRect(792, 420, 1266, 572), panel_surface, CColor(0xff, 0xff, 0xff, 0x0a),
+      2.0, "VOICE DESCRIPTION", CRect(15, 12, 458, 30), CRect(15, 43, 462, 144),
+      font_heading_, font_description_, CColor(0xc1, 0xbe, 0xb8),
+      CColor(0xbb, 0xb8, 0xb2), CRect(622, 271, 1266, 706),
+      [this](const char* const title, const std::u8string& text,
+             const CRect popup_rect) -> void {
+        ShowDescriptionPopup(title, text, popup_rect);
+      });
+  main_page->addView(voice_description_pane_);
+
+  // Tuning ページ
+  auto* tuning_panel = new SurfacePanel(CRect(16, 16, 336, 304), panel_surface,
+                                        CColor(0xff, 0xff, 0xff, 0x0d), 3.0);
+  tuning_page->addView(tuning_panel);
+  auto* const detail_heading_font = new CFontDesc("Segoe UI", 28);
+  auto* const detail_title =
+      make_label(tuning_panel, CRect(28, 27, 292, 62), "Tuning",
+                 detail_heading_font, CColor(0xf0, 0xcf, 0x90));
+  detail_title->setMouseEnabled(false);
+  detail_heading_font->forget();
+  add_slider(tuning_panel,
+             static_cast<ParamID>(ParameterID::kIntonationIntensity),
+             CRect(28, 80, 292, 123), 1, 0.5f, 0.1f);
+  add_slider(tuning_panel, static_cast<ParamID>(ParameterID::kPitchCorrection),
+             CRect(28, 140, 292, 183), 1, 0.5f, 0.1f);
+  make_label(tuning_panel, CRect(28, 210, 292, 228), "Pitch Correction Type",
+             font_small_, CColor(0xb8, 0xb5, 0xaf));
+  add_option_menu(tuning_panel,
+                  static_cast<ParamID>(ParameterID::kPitchCorrectionType),
+                  CRect(28, 236, 292, 264));
+
+  // Description の拡大表示
+  description_popup_ = new DescriptionPopupView(
+      CRect(0, 0, kWindowWidth, kWindowHeight), panel_surface,
+      CColor(0xd6, 0xa8, 0x57, 0x2b), 3.0, font_bold_, font_description_);
+  root->addView(description_popup_);
+
+  SelectPage(0);
 
   if (!frame->open(parent)) {
     return false;
   }
 
-  // frame->open で Attach された後でないと
-  // テキストに合わせてテキストボックスの位置が変わらない
+  if (const auto* value = std::get_if<std::unique_ptr<std::u8string>>(
+          &beatrice_controller->core_.parameter_state_.GetValue(
+              ParameterID::kModel));
+      value && *value) {
+    static_cast<FileSelector*>(
+        controls_.at(static_cast<ParamID>(ParameterID::kModel)))
+        ->SetPath(**value);
+  }
   SyncModelDescription();
-
   SyncSourcePitchRange();
   SyncParameterAvailability();
 
+  // デバッグ用
+  if (const auto model_path = GetScreenshotModelPath(); !model_path.empty()) {
+    auto* const model_control = static_cast<FileSelector*>(
+        controls_.at(static_cast<ParamID>(ParameterID::kModel)));
+    model_control->SetPath(model_path);
+    valueChanged(model_control);
+  }
+  if (HasEnvironmentVariable("BEATRICE_SCREENSHOT_VOICE_MORPH") &&
+      model_config_.has_value() && common::GetVoiceCount(*model_config_) > 1) {
+    auto* const voice_control = static_cast<COptionMenu*>(
+        controls_.at(static_cast<ParamID>(ParameterID::kVoice)));
+    voice_control->setValue(voice_control->getMax());
+    valueChanged(voice_control);
+  }
+
   return true;
 }
-
 void PLUGIN_API Editor::close() {
   if (frame) {
-    tab_view_->removeAllTabs();
     frame->forget();
     frame = nullptr;
-    model_voice_description_ = nullptr;
+    controls_.clear();
     portraits_.clear();
-    tab_view_ = nullptr;
+    portrait_menu_thumbnails_.clear();
     portrait_view_ = nullptr;
-    portrait_description_ = nullptr;
+    unloaded_logo_view_ = nullptr;
+    portrait_description_pane_ = nullptr;
+    model_description_pane_ = nullptr;
+    voice_description_pane_ = nullptr;
+    voice_selector_ = nullptr;
+    description_popup_ = nullptr;
+    model_name_label_ = nullptr;
+    page_views_ = {};
+    page_tabs_ = {};
+    tab_indicator_ = nullptr;
   }
+}
+
+void Editor::SelectPage(const int page) {
+  static constexpr auto kIndicatorRects =
+      std::array{CRect(528, 0, 640, 52), CRect(640, 0, 752, 52)};
+  const auto page_count = static_cast<int>(page_views_.size());
+  const auto indicator_count = static_cast<int>(kIndicatorRects.size());
+  for (auto i = 0; i < page_count; ++i) {
+    if (page_views_[i]) {
+      page_views_[i]->setVisible(i == page);
+      page_views_[i]->setDirty();
+    }
+    if (page_tabs_[i]) {
+      const auto selected = i == page;
+      page_tabs_[i]->setFontColor(selected ? CColor(0xf0, 0xcf, 0x90)
+                                           : CColor(0xb8, 0xb5, 0xaf));
+      page_tabs_[i]->setStyle(CParamDisplay::kNoFrame);
+      if (auto* const tab = dynamic_cast<GlowingActionLabel*>(page_tabs_[i])) {
+        tab->SetActive(selected);
+      }
+      page_tabs_[i]->setDirty();
+    }
+  }
+  if (tab_indicator_ && page >= 0 && page < indicator_count) {
+    tab_indicator_->setViewSize(kIndicatorRects[page]);
+    tab_indicator_->setMouseableArea(kIndicatorRects[page]);
+    tab_indicator_->setDirty();
+  }
+  HideVoiceMenu();
+  HideDescriptionPopup();
+}
+
+void Editor::SetPortraitDescriptionText(const std::u8string& text) {
+  if (portrait_description_pane_) {
+    portrait_description_pane_->SetText(text);
+  }
+}
+
+void Editor::SetModelDescriptionText(const std::u8string& text) {
+  if (model_description_pane_) {
+    model_description_pane_->SetText(text);
+  }
+}
+
+void Editor::SetVoiceDescriptionText(const std::u8string& text) {
+  if (voice_description_pane_) {
+    voice_description_pane_->SetText(text);
+  }
+}
+
+void Editor::SetPortraitDescriptionMode(const bool morphing) {
+  if (portrait_description_pane_) {
+    portrait_description_pane_->SetTitle(morphing ? "MORPH CONTROLS"
+                                                  : "PORTRAIT DESCRIPTION");
+    portrait_description_pane_->SetBodyVisible(!morphing);
+  }
+}
+
+void Editor::SetVoiceSelectorDisplay(const int voice_id) {
+  if (voice_selector_) {
+    voice_selector_->SetDisplay(model_config_, portrait_menu_thumbnails_,
+                                voice_id);
+  }
+}
+
+void Editor::ToggleVoiceMenu() {
+  if (voice_selector_) {
+    voice_selector_->ToggleMenu(model_config_, portrait_menu_thumbnails_);
+  }
+}
+
+void Editor::HideVoiceMenu() {
+  if (voice_selector_) {
+    voice_selector_->HideMenu();
+  }
+}
+
+void Editor::RebuildVoiceMenu() {
+  if (voice_selector_) {
+    voice_selector_->RebuildMenu(model_config_, portrait_menu_thumbnails_);
+  }
+}
+
+void Editor::ShowDescriptionPopup(const char* const title,
+                                  const std::u8string& text, CRect size) {
+  HideVoiceMenu();
+  if (description_popup_) {
+    description_popup_->Show(title, text, size);
+  }
+}
+
+void Editor::HideDescriptionPopup() {
+  if (description_popup_) {
+    description_popup_->Hide();
+  }
+}
+
+void Editor::PerformParameterEdit(const ParamID param_id,
+                                  const ParamValue normalized_value) {
+  auto* const controller = static_cast<Controller*>(getController());
+  if (controller->setParamNormalized(param_id, normalized_value) ==
+      Steinberg::kResultTrue) {
+    controller->performEdit(param_id, controller->getParamNormalized(param_id));
+  }
+}
+
+void Editor::SendParameterEdit(const ParamID param_id,
+                               const ParamValue normalized_value) {
+  auto* const controller = static_cast<Controller*>(getController());
+  controller->beginEdit(param_id);
+  PerformParameterEdit(param_id, normalized_value);
+  controller->endEdit(param_id);
 }
 
 // DAW 側から GUI にパラメータ変更を伝える。
@@ -196,46 +751,48 @@ void PLUGIN_API Editor::close() {
 // valueChanged からも controller を介して間接的に呼ばれる。
 // 引数じゃなくて core から値を取った方が良い？
 void Editor::SyncValue(const ParamID param_id, const float plain_value) {
-  if (!frame) {
+  const auto parameter_id = static_cast<ParameterID>(param_id);
+  if (common::IsVoiceMorphParameter(parameter_id)) {
     return;
   }
-  if (common::IsVoiceMorphParameter(static_cast<ParameterID>(param_id))) {
-    const auto* const voice_control =
-        controls_.at(static_cast<ParamID>(ParameterID::kVoice));
-    if (voice_control->getValue() == voice_control->getMax()) {
-      SyncVoiceMorphingDescription();
-    }
-    return;
-  }
-  if (!controls_.contains(param_id)) {
+
+  if (!frame || !controls_.contains(param_id)) {
     return;
   }
   auto* const control = controls_.at(param_id);
-
   // Voice は色々ややこしいので特別扱いする
   if (param_id == static_cast<ParamID>(ParameterID::kVoice)) {
     const auto voice_id = static_cast<int>(std::round(plain_value));
     control->setValue(plain_value);
     if (!model_config_.has_value()) {
       portrait_view_->setBackground(nullptr);
-      portrait_description_->setText("");
-      tab_view_->selectTab(0);
+      portrait_view_->setVisible(false);
+      unloaded_logo_view_->setVisible(true);
+      SetPortraitDescriptionMode(false);
+      SetPortraitDescriptionText(u8"");
+      SetVoiceDescriptionText(u8"");
+      SetVoiceSelectorDisplay(-1);
     } else if (voice_id == 0 ||
                voice_id < static_cast<int>(control->getMax())) {
       portrait_view_->setBackground(
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
-      portrait_description_->setText(reinterpret_cast<const char*>(
-          model_config_->voices[voice_id].portrait.description.c_str()));
-      model_voice_description_->SetVoiceDescription(
-          model_config_->voices[voice_id].description);
-      tab_view_->selectTab(0);
+      portrait_view_->setVisible(true);
+      unloaded_logo_view_->setVisible(false);
+      SetPortraitDescriptionMode(false);
+      SetVoiceSelectorDisplay(voice_id);
+      SetPortraitDescriptionText(
+          model_config_->voices[voice_id].portrait.description);
+      SetVoiceDescriptionText(model_config_->voices[voice_id].description);
     } else {
       portrait_view_->setBackground(nullptr);
-      portrait_description_->setText("");
-      // model_voice_description_->SetVoiceDescription(
-      //    u8"< Voice Morphing Mode >");
-      SyncVoiceMorphingDescription();
-      tab_view_->selectTab(1);
+      portrait_view_->setVisible(false);
+      unloaded_logo_view_->setVisible(true);
+      SetPortraitDescriptionMode(true);
+      SetPortraitDescriptionText(u8"");
+      SetVoiceSelectorDisplay(-2);
+    }
+    if (voice_selector_ && voice_selector_->IsMenuVisible()) {
+      RebuildVoiceMenu();
     }
   } else {
     control->setValue(plain_value);
@@ -305,17 +862,30 @@ void Editor::SyncParameterAvailability() {
 // model_selector->getPath() をもとに
 // 話者リスト等を更新する
 void Editor::SyncModelDescription() {
+  auto* const controller = static_cast<Controller*>(getController());
   auto* const model_selector = static_cast<FileSelector*>(
       controls_.at(static_cast<ParamID>(ParameterID::kModel)));
-  auto* const voice_combobox = static_cast<COptionMenu*>(
+  auto* const voice_menu = static_cast<COptionMenu*>(
       controls_.at(static_cast<ParamID>(ParameterID::kVoice)));
   const auto file = model_selector->GetPath();
   model_selector->setText("<unloaded>");
-  voice_combobox->removeAllEntry();
-  model_voice_description_->SetModelDescription(u8"");
-  model_voice_description_->SetVoiceDescription(u8"");
+  voice_menu->removeAllEntry();
+  SetModelDescriptionText(u8"");
+  SetVoiceDescriptionText(u8"");
+  SetPortraitDescriptionText(u8"");
+  if (portrait_view_) {
+    portrait_view_->setBackground(nullptr);
+    portrait_view_->setVisible(false);
+  }
+  SetPortraitDescriptionMode(false);
+  if (unloaded_logo_view_) {
+    unloaded_logo_view_->setVisible(true);
+  }
   model_config_ = std::nullopt;
+  SetVoiceSelectorDisplay(-1);
+  RebuildVoiceMenu();
   portraits_.clear();
+  portrait_menu_thumbnails_.clear();
   if (file.empty()) {
     // 初期状態
     return;
@@ -326,7 +896,7 @@ void Editor::SyncModelDescription() {
     // 再び GUI を開いた場合などには
     // Processor のみ読み込まれている可能性がある。
     model_selector->setText("<failed to load>");
-    model_voice_description_->SetModelDescription(
+    SetModelDescriptionText(
         u8"Error: The model could not be loaded due to a file move or another "
         u8"issue. Please reload a valid model.");
     return;
@@ -335,23 +905,17 @@ void Editor::SyncModelDescription() {
     const auto toml_data = toml::parse(file);
     model_config_ = toml::get<common::ModelConfig>(toml_data);
     if (model_config_->model.VersionInt() == -1) {
-      model_voice_description_->SetModelDescription(
-          u8"Error: Unknown model version.");
+      SetModelDescriptionText(u8"Error: Unknown model version.");
       return;
     }
     model_selector->setText(
         reinterpret_cast<const char*>(model_config_->model.name.c_str()));
+    const auto voice_count = common::GetVoiceCount(*model_config_);
     // 話者のリストを読み込む。
     // また、予め portrait を読み込んで、必要に応じてリサイズしておく。
-    int voice_counter = 0;
-    for (const auto& voice : model_config_->voices) {
-      if (voice.name.empty() && voice.description.empty() &&
-          voice.portrait.path.empty() && voice.portrait.description.empty()) {
-        break;
-      }
-      ++voice_counter;
-      voice_combobox->addEntry(
-          reinterpret_cast<const char*>(voice.name.c_str()));
+    for (auto i = 0; i < voice_count; ++i) {
+      const auto& voice = model_config_->voices[i];
+      voice_menu->addEntry(reinterpret_cast<const char*>(voice.name.c_str()));
 
       // portrait
       {
@@ -370,79 +934,66 @@ void Editor::SyncModelDescription() {
         }
         const auto original_bitmap =
             VSTGUI::owned(new CBitmap(platform_bitmap));
-        const auto original_size = original_bitmap->getSize();
-        if (original_size.x == kPortraitWidth &&
-            original_size.y == kPortraitHeight) {
-          portraits_.insert({voice.portrait.path, original_bitmap});
-          goto load_portrait_succeeded;
-        }
-        const auto scale =
-            VSTGUI::owned(BitmapFilter::Factory::getInstance().createFilter(
-                BitmapFilter::Standard::kScaleBilinear));
-        scale->setProperty(BitmapFilter::Standard::Property::kInputBitmap,
-                           original_bitmap.get());
-        scale->setProperty(BitmapFilter::Standard::Property::kOutputRect,
-                           CRect(0, 0, kPortraitWidth, kPortraitHeight));
-        if (!scale->run()) {
+        auto rounded_portrait = MakeRoundedBitmap(
+            original_bitmap.get(), kPortraitWidth, kPortraitHeight, 4.0);
+        auto menu_thumbnail = ScaleBitmap(original_bitmap.get(), 42, 42);
+        if (!rounded_portrait || !menu_thumbnail) {
           goto load_portrait_failed;
         }
-        auto* const scaled_bitmap_obj =
-            scale->getProperty(BitmapFilter::Standard::Property::kOutputBitmap)
-                .getObject();
-        auto* const scaled_bitmap = dynamic_cast<CBitmap*>(scaled_bitmap_obj);
-        if (!scaled_bitmap) {
-          goto load_portrait_failed;
-        }
-        portraits_.insert({voice.portrait.path, VSTGUI::shared(scaled_bitmap)});
+        portraits_.insert({voice.portrait.path, rounded_portrait});
+        portrait_menu_thumbnails_.insert({voice.portrait.path, menu_thumbnail});
         goto load_portrait_succeeded;
       }
       assert(false);
     load_portrait_failed:
       portraits_.insert({voice.portrait.path, nullptr});
+      portrait_menu_thumbnails_.insert({voice.portrait.path, nullptr});
     load_portrait_succeeded: {}
     }
 
-    if (voice_counter > 1) {
+    if (voice_count > 1) {
       const auto flags = model_config_->model.VersionInt() <= 2
                              ? VSTGUI::CMenuItem::kNoFlags
                              : VSTGUI::CMenuItem::kDisabled;
-      voice_combobox->addEntry("Voice Morphing Mode", -1, flags);
+      voice_menu->addEntry("Voice Morphing Mode", -1, flags);
       portraits_.insert({u8"", nullptr});
+      portrait_menu_thumbnails_.insert({u8"", nullptr});
     }
 
-    voice_combobox->setDirty();
-    const auto voice_id =
+    voice_menu->setDirty();
+    auto voice_id =
         Denormalize(std::get<common::ListParameter>(
                         common::kSchema.GetParameter(ParameterID::kVoice)),
                     controller->getParamNormalized(
                         static_cast<ParamID>(ParameterID::kVoice)));
-    if (voice_id < voice_counter) {
+    if (voice_id < voice_count) {
       const auto& voice = model_config_->voices[voice_id];
       portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
-      portrait_description_->setText(
-          reinterpret_cast<const char*>(voice.portrait.description.c_str()));
-      model_voice_description_->SetVoiceDescription(voice.description);
-      tab_view_->selectTab(0);
+      portrait_view_->setVisible(true);
+      unloaded_logo_view_->setVisible(false);
+      SetPortraitDescriptionMode(false);
+      SetPortraitDescriptionText(voice.portrait.description);
+      SetVoiceDescriptionText(voice.description);
+      SetVoiceSelectorDisplay(voice_id);
     } else {
       portrait_view_->setBackground(nullptr);
-      portrait_description_->setText("");
-      // model_voice_description_->SetVoiceDescription(u8"< Voice Morphing Mode
-      // >");
-      SyncVoiceMorphingDescription();
-      tab_view_->selectTab(1);
+      portrait_view_->setVisible(false);
+      unloaded_logo_view_->setVisible(true);
+      SetPortraitDescriptionMode(true);
+      SetPortraitDescriptionText(u8"");
+      SetVoiceSelectorDisplay(-2);
     }
-    model_voice_description_->SetModelDescription(
-        model_config_->model.description);
+    SetModelDescriptionText(model_config_->model.description);
+    RebuildVoiceMenu();
 
     portrait_view_->setDirty();
-    portrait_description_->setDirty();
-
-    if (auto* const column_view = model_voice_description_->getParentView()) {
-      column_view->setDirty();
+    if (portrait_description_pane_) {
+      portrait_description_pane_->setDirty();
     }
+    unloaded_logo_view_->setDirty();
   } catch (const std::exception& e) {
     model_selector->setText("<failed to load>");
-    model_voice_description_->SetModelDescription(
+    SetModelDescriptionText(
         u8"Error:\n" +
         std::u8string(e.what(), e.what() + std::strlen(e.what())));
     return;
@@ -450,38 +1001,38 @@ void Editor::SyncModelDescription() {
 }
 
 // GUI でパラメータに変更があったときに、DAW に伝える。
-// この中で量子化しているが、スライダーの 1 箇所をクリックし続けただけで
-// ループしてしまう気がするので、できれば Slider の実装側で量子化したい。
 // あとダブルクリックでデフォルトに戻したい。
 void Editor::valueChanged(CControl* const pControl) {
+  assert(pControl);
+  if (!pControl) {
+    return;
+  }
   const auto vst_param_id = pControl->getTag();
   const auto param_id = static_cast<ParameterID>(vst_param_id);
   const auto& param = common::kSchema.GetParameter(param_id);
   auto* const controller = static_cast<Controller*>(getController());
   auto& core = controller->core_;
-  const auto communicate = [&controller](const int param_id,
-                                         const double normalized_value) {
-    controller->setParamNormalized(param_id, normalized_value);
-    controller->beginEdit(param_id);
-    controller->performEdit(param_id, normalized_value);
-    controller->endEdit(param_id);
-  };
   // 各々の Control でやるべきという感じも
   if (auto* const control = dynamic_cast<Slider*>(pControl)) {
-    // communicate 含めて controller の中に処理書いた方が明快？
+    // SendParameterEdit 含めて controller の中に処理書いた方が明快？
     const auto* const num_param = std::get_if<common::NumberParameter>(&param);
     assert(num_param);
-    const auto plain_value = control->getValue();
+    const auto normalized_value = Normalize(*num_param, control->getValue());
+    const auto plain_value = Denormalize(*num_param, normalized_value);
+    const auto control_value = static_cast<float>(plain_value);
+    if (control->getValue() != control_value) {
+      control->setValue(control_value);
+      control->invalid();
+    }
     if (plain_value ==
         std::get<double>(core.parameter_state_.GetValue(param_id))) {
       return;
     }
-    const auto normalized_value =
-        static_cast<float>(Normalize(*num_param, plain_value));
-    const auto error_code = num_param->ControllerSetValue(core, plain_value);
+    core.parameter_state_.SetValue(param_id, plain_value);
+    [[maybe_unused]] const auto error_code =
+        num_param->ControllerSetValue(core, plain_value);
     assert(error_code == common::ErrorCode::kSuccess);
-    communicate(vst_param_id, normalized_value);
-
+    PerformParameterEdit(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<COptionMenu*>(pControl)) {
     const auto* const list_param = std::get_if<common::ListParameter>(&param);
     assert(list_param);
@@ -494,11 +1045,10 @@ void Editor::valueChanged(CControl* const pControl) {
     const auto error_code = list_param->ControllerSetValue(core, plain_value);
     if (error_code == common::ErrorCode::kSpeakerIDOutOfRange) {
       // これが表示されることは無いはず
-      model_voice_description_->SetVoiceDescription(
-          u8"Error: Speaker ID out of range.");
+      SetVoiceDescriptionText(u8"Error: Speaker ID out of range.");
     }
     assert(error_code == common::ErrorCode::kSuccess);
-    communicate(vst_param_id, normalized_value);
+    PerformParameterEdit(vst_param_id, normalized_value);
   } else if (auto* const control = dynamic_cast<FileSelector*>(pControl)) {
     const auto* const str_param = std::get_if<common::StringParameter>(&param);
     assert(str_param);
@@ -538,12 +1088,12 @@ void Editor::valueChanged(CControl* const pControl) {
             std::get_if<common::NumberParameter>(&param)) {
       const auto normalized_value =
           Normalize(*num_param, std::get<double>(value));
-      communicate(vst_param_id, normalized_value);
+      SendParameterEdit(vst_param_id, normalized_value);
     } else if (const auto* const list_param =
                    std::get_if<common::ListParameter>(&param)) {
       const auto normalized_value =
           Normalize(*list_param, std::get<int>(value));
-      communicate(vst_param_id, normalized_value);
+      SendParameterEdit(vst_param_id, normalized_value);
     } else if (std::get_if<common::StringParameter>(&param)) {
       // 現状何かに連動して StringParameter が変化することはない
       assert(false);
@@ -554,364 +1104,18 @@ void Editor::valueChanged(CControl* const pControl) {
   core.updated_parameters_.clear();
 }
 
-// auto Editor::notify(CBaseObject* const sender,
-//                            const char* const message) -> CMessageResult{
-//     return VSTGUIEditor::notify(sender, message);
-// }
-
-// 以下は open() からのみ呼ばれるメンバ関数
-
-void Editor::BeginColumn(Context& context, const int width,
-                         const CColor& back_color) {
-  context.column_width = width;
-  context.column_back_color = back_color;
-  context.column_start_y = context.y;
-  context.column_start_x = context.x;
-  context.y = 0;
-  context.x = 0;
-  context.last_element_mergin = kInnerColumnMerginY;
-  context.x += kInnerColumnMerginX;
-}
-
-auto Editor::EndColumn(Context& context) -> CView* {
-  // const auto bottom =
-  //     context.y + std::max(context.last_element_mergin,
-  //     kInnerColumnMerginY);
-  const auto bottom = kWindowHeight - kFooterHeight;
-  auto* const column = new CViewContainer(
-      CRect(context.column_start_x, kHeaderHeight,
-            context.column_start_x + context.column_width, bottom));
-  column->setBackgroundColor(context.column_back_color);
-  frame->addView(column);
-  for (auto&& element : context.column_elements) {
-    column->addView(element);
+void Editor::controlBeginEdit(CControl* const control) {
+  assert(control);
+  if (control) {
+    static_cast<Controller*>(getController())->beginEdit(control->getTag());
   }
-  context.column_elements.clear();
-  context.y = kHeaderHeight;
-  context.x = context.column_start_x + context.column_width + kColumnMerginX;
-  context.column_start_y = -1;
-  context.column_start_x = -1;
-  context.last_element_mergin = 0;
-  context.first_group = true;
-  return column;
 }
 
-void Editor::BeginTabColumn(Context& context, const int width,
-                            const CColor& back_color) {
-  context.column_width = width;
-  context.column_back_color = back_color;
-  context.column_start_y = context.y;
-  context.column_start_x = context.x;
-  context.y = 0;
-  context.x = 0;
-  context.last_element_mergin = kInnerColumnMerginY;
-  context.x += kInnerColumnMerginX;
-}
-
-auto Editor::EndTabColumn(Context& context) -> CView* {
-  auto size = CRect(context.column_start_x, kHeaderHeight,
-                    context.column_start_x + context.column_width,
-                    kWindowHeight - kFooterHeight);
-  if (!tab_view_) {
-    tab_view_ = new VSTGUI::CTabView(
-        size,
-        CRect(context.column_start_x, kHeaderHeight,
-              context.column_start_x + context.column_width, kHeaderHeight));
-    frame->addView(tab_view_);
+void Editor::controlEndEdit(CControl* const control) {
+  assert(control);
+  if (control) {
+    static_cast<Controller*>(getController())->endEdit(control->getTag());
   }
-  auto* child_view = new CViewContainer(size);
-  child_view->setBackgroundColor(context.column_back_color);
-  for (auto&& element : context.column_elements) {
-    child_view->addView(element);
-  }
-  tab_view_->addTab(child_view);
-  context.column_elements.clear();
-  context.y = kHeaderHeight;
-  context.x = context.column_start_x;
-  context.column_start_y = -1;
-  context.column_start_x = -1;
-  context.last_element_mergin = 0;
-  context.first_group = true;
-  return tab_view_;
-}
-
-auto Editor::BeginGroup(Context& context, const std::u8string& name) -> CView* {
-  if (!context.first_group) {
-    context.last_element_mergin = 20;  // 線を引くとかする？
-  }
-  context.first_group = false;
-  context.y += std::max(context.last_element_mergin, kGroupLabelMerginY);
-  auto* const group_label =
-      new CTextLabel(CRect(0, 0, context.column_width, kElementHeight)
-                         .offset(context.x, context.y),
-                     reinterpret_cast<const char*>((u8"⚙ " + name).c_str()),
-                     nullptr, CParamDisplay::kNoFrame);
-  group_label->setBackColor(kTransparentCColor);
-  group_label->setFont(font_bold_);
-  group_label->setFontColor(kDarkColorScheme.on_surface);
-  group_label->setHoriAlign(CHoriTxtAlign::kLeftText);
-  context.column_elements.push_back(group_label);
-  context.y += kElementHeight;
-  context.x += kGroupIndentX;
-  context.last_element_mergin = kGroupLabelMerginY;
-  return group_label;
-}
-
-void Editor::EndGroup(Context& context) { context.x -= kGroupIndentX; }
-
-// NumberParameter 用
-auto Editor::MakeSlider(Context& context, const ParamID param_id,
-                        const int precision, const float wheel_inc,
-                        const float fine_wheel_inc) -> CView* {
-  static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
-  auto* const param =
-      static_cast<LinearParameter*>(controller->getParameterObject(param_id));
-  auto* const slider_bmp =
-      new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
-                         kDarkColorScheme.outline);
-  auto* const handle_bmp =
-      new MonotoneBitmap(kHandleWidth, kElementHeight,
-                         kDarkColorScheme.secondary_dim, kTransparentCColor);
-
-  context.y += std::max(context.last_element_mergin, kElementMerginY);
-
-  auto* const slider_control = new Slider(
-      CRect(0, 0, kElementWidth, kElementHeight).offset(context.x, context.y),
-      this, static_cast<int>(param_id), context.x,
-      context.x + kElementWidth - kHandleWidth, handle_bmp, slider_bmp,
-      Steinberg::Vst::StringConvert::convert(param->getInfo().units), font_,
-      precision);
-  slider_control->setMin(param->GetMinPlain());
-  slider_control->setMax(param->GetMaxPlain());
-  slider_control->setWheelInc(wheel_inc);
-  slider_control->setFineWheelInc(fine_wheel_inc);
-  slider_control->setDefaultValue(
-      param->toPlain(param->getInfo().defaultNormalizedValue));
-  slider_control->setValue(
-      static_cast<float>(param->toPlain(param->getNormalized())));
-  context.column_elements.push_back(slider_control);
-  slider_bmp->forget();
-  handle_bmp->forget();
-
-  controls_.insert({param_id, slider_control});
-
-  // 名前
-  const auto title_pos =
-      CRect(0, 0, kLabelWidth, kElementHeight)
-          .offset(context.x + kElementWidth + kElementMerginX, context.y);
-  const auto title_string =
-      Steinberg::Vst::StringConvert::convert(param->getInfo().title);
-  auto* const title_control = new CTextLabel(title_pos, title_string.c_str(),
-                                             nullptr, CParamDisplay::kNoFrame);
-  title_control->setBackColor(kTransparentCColor);
-  title_control->setFont(font_);
-  title_control->setFontColor(kDarkColorScheme.on_surface);
-  title_control->setHoriAlign(CHoriTxtAlign::kLeftText);
-  context.column_elements.push_back(title_control);
-
-  context.y += kElementHeight;
-  context.last_element_mergin = kElementMerginY;
-
-  return slider_control;
-}
-
-// ListParameter 用
-auto Editor::MakeCombobox(
-    Context& context, const ParamID param_id,
-    const CColor& back_color = kTransparentCColor,
-    const CColor& font_color = kDarkColorScheme.on_surface) -> CView* {
-  auto* const param = static_cast<StringListParameter*>(
-      controller->getParameterObject(param_id));
-  const auto step_count = param->getInfo().stepCount;
-
-  auto* const bmp = new MonotoneBitmap(kElementWidth, kElementHeight,
-                                       back_color, kDarkColorScheme.outline);
-  context.y += std::max(context.last_element_mergin, kElementMerginY);
-
-  const auto pos =
-      CRect(0, 0, kElementWidth, kElementHeight).offset(context.x, context.y);
-  auto* const control =
-      new COptionMenu(pos, this, static_cast<int>(param_id), bmp);
-  bmp->forget();
-  for (auto i = 0; i <= step_count; ++i) {
-    String128 tmp_string128;
-    param->toString(param->toNormalized(i), tmp_string128);
-    const auto name = Steinberg::Vst::StringConvert::convert(tmp_string128);
-    control->addEntry(name.c_str());
-  }
-  control->setValue(static_cast<float>(
-      param->toPlain(controller->getParamNormalized(param_id))));
-  control->setFont(font_);
-  control->setFontColor(font_color);
-  context.column_elements.push_back(control);
-  controls_.insert({param_id, control});
-
-  // ▼ 記号
-  const auto arrow_pos =
-      CRect(0, 0, kElementHeight, kElementHeight)
-          .offset(context.x + (kElementWidth - kElementHeight), context.y)
-          .inset(8, 8);
-  auto* const arrow_control =
-      new CTextLabel(arrow_pos, reinterpret_cast<const char*>(u8"▼"), nullptr,
-                     CParamDisplay::kNoFrame);
-  arrow_control->setBackColor(kTransparentCColor);
-  auto* const arrow_font =
-      new CFontDesc(font_->getName(), font_->getSize() - 6);
-  arrow_control->setFont(arrow_font);
-  arrow_font->forget();
-  arrow_control->setFontColor(font_color);
-  arrow_control->setHoriAlign(CHoriTxtAlign::kCenterText);
-  // クリックの判定吸われないように、▼ 記号へのマウス操作を無効にする
-  arrow_control->setMouseEnabled(false);
-  context.column_elements.push_back(arrow_control);
-
-  // 名前
-  const auto title_pos =
-      CRect(0, 0, kLabelWidth, kElementHeight)
-          .offset(context.x + kElementWidth + kElementMerginX, context.y);
-  const auto title_string =
-      Steinberg::Vst::StringConvert::convert(param->getInfo().title);
-  auto* const title_control = new CTextLabel(title_pos, title_string.c_str(),
-                                             nullptr, CParamDisplay::kNoFrame);
-  title_control->setBackColor(kTransparentCColor);
-  title_control->setFont(font_);
-  title_control->setFontColor(kDarkColorScheme.on_surface);
-  title_control->setHoriAlign(CHoriTxtAlign::kLeftText);
-  context.column_elements.push_back(title_control);
-
-  context.y += kElementHeight;
-  context.last_element_mergin = kElementMerginY;
-
-  return control;
-}
-
-// StringParameter 用
-// クリックされる -> onMouseDown でダイアログが開いてパスを取得
-// -> valueChanged から ControllerSetValue が呼ばれる
-// -> valueChanged から processor にメッセージ (ファイル名) を送る
-// -> notify で processor の mutex を取得、
-//    この間 process は無音を出力し、パラメータ変更はキューに詰めとく
-// -> モデルを読み込む
-// -> valueChanged で連動した他のパラメータの変更が処理される
-auto Editor::MakeFileSelector(Context& context, ParamID vst_param_id)
-    -> CView* {
-  const auto param_id = static_cast<ParameterID>(vst_param_id);
-  const auto param =
-      std::get<common::StringParameter>(common::kSchema.GetParameter(param_id));
-  auto* const bmp =
-      new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
-                         kDarkColorScheme.outline);
-  context.y += std::max(context.last_element_mergin, kElementMerginY);
-
-  const auto pos =
-      CRect(0, 0, kElementWidth, kElementHeight).offset(context.x, context.y);
-  auto* const control =
-      new FileSelector(pos, this, static_cast<int>(vst_param_id), bmp);
-  bmp->forget();
-  auto* const controller = static_cast<Controller*>(getController());
-  control->setBackColor(kTransparentCColor);
-  control->setFont(font_);
-  control->setFontColor(kDarkColorScheme.on_surface);
-  control->setHoriAlign(CHoriTxtAlign::kCenterText);
-  control->SetPath(*std::get<std::unique_ptr<std::u8string>>(
-      controller->core_.parameter_state_.GetValue(param_id)));
-  context.column_elements.push_back(control);
-  controls_.insert({vst_param_id, control});
-
-  // 名前
-  const auto title_pos =
-      CRect(0, 0, kLabelWidth, kElementHeight)
-          .offset(context.x + kElementWidth + kElementMerginX, context.y);
-  auto* const title_control = new CTextLabel(
-      title_pos, reinterpret_cast<const char*>(param.GetName().c_str()),
-      nullptr, CParamDisplay::kNoFrame);
-  title_control->setBackColor(kTransparentCColor);
-  title_control->setFont(font_);
-  title_control->setFontColor(kDarkColorScheme.on_surface);
-  title_control->setHoriAlign(CHoriTxtAlign::kLeftText);
-  context.column_elements.push_back(title_control);
-
-  context.y += kElementHeight;
-  context.last_element_mergin = kElementMerginY;
-
-  return control;
-}
-
-auto Editor::MakePortraitView(Context& context) -> CView* {
-  portrait_view_ = new CView(CRect(0, 0, kPortraitWidth, kPortraitHeight));
-  context.column_elements.push_back(portrait_view_);
-  context.y += kPortraitHeight;
-  context.last_element_mergin = kElementMerginY;
-  return portrait_view_;
-}
-
-auto Editor::MakeModelVoiceDescription(Context& context) -> CView* {
-  context.y += std::max(context.last_element_mergin, 24);
-  const auto offset_x = context.x;
-
-  model_voice_description_ = new ModelVoiceDescription(
-      CRect(context.x, context.y, context.column_width - offset_x,
-            kWindowHeight - kFooterHeight - kHeaderHeight),
-      font_description_, kElementHeight, kElementMerginY + 4);
-
-  context.column_elements.push_back(model_voice_description_);
-
-  return nullptr;
-}
-
-auto Editor::MakePortraitDescription(Context& context) -> CView* {
-  context.y += std::max(context.last_element_mergin, 24);
-  const auto offset_x = context.x;
-  auto* const description = new CMultiLineTextLabel(
-      CRect(context.x, context.y, context.column_width - offset_x,
-            kWindowHeight - kFooterHeight));
-  description->setFont(font_description_);
-  description->setFontColor(kDarkColorScheme.on_surface);
-  description->setBackColor(kTransparentCColor);
-  description->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
-  description->setStyle(CParamDisplay::kNoFrame);
-  description->setHoriAlign(CHoriTxtAlign::kLeftText);
-  portrait_description_ = description;
-  context.column_elements.push_back(portrait_description_);
-
-  context.y = kWindowHeight - kFooterHeight;
-  context.last_element_mergin = kElementMerginY;
-  return description;
-}
-
-void Editor::SyncVoiceMorphingDescription() {
-  if (!model_config_.has_value()) {
-    return;
-  }
-  std::u8string str;
-
-  str += u8"[注意 / Caution]";
-  str += u8"\n";
-  str +=
-      u8"Voice Morphing Mode では、未選択の Voice の学習データが\n"
-      u8"変換結果に影響を与えやすくなる可能性があります。\n"
-      u8"意図せぬ声質の類似や権利侵害にご注意ください。\n";
-  str +=
-      u8"In Voice Morphing Mode, the training data of unselected Voices could "
-      u8"be more prone to influencing the conversion results. Please be "
-      u8"mindful of unintended similarities in timbre and possible rights "
-      u8"infringement.\n";
-  str += u8"\n";
-
-  const auto* const controller = static_cast<Controller*>(getController());
-  const auto weights =
-      common::GetVoiceMorphState(controller->core_.parameter_state_)
-          .CalculateWeights();
-  const auto voice_count = common::GetVoiceCount(*model_config_);
-  for (auto i = 0; i < voice_count; ++i) {
-    if (weights[i] >= common::kVoiceMorphWeightThreshold) {
-      str += model_config_->voices[i].name;
-      str += u8"\n";
-      str += model_config_->voices[i].description;
-      str += u8"\n";
-    }
-  }
-  model_voice_description_->SetVoiceDescription(str);
 }
 
 }  // namespace beatrice::vst

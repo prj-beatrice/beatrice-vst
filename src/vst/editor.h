@@ -3,14 +3,17 @@
 #ifndef BEATRICE_VST_EDITOR_H_
 #define BEATRICE_VST_EDITOR_H_
 
+#include <array>
 #include <map>
 #include <optional>
-#include <vector>
+#include <string>
 
+#include "vst3sdk/pluginterfaces/base/fplatform.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/vstguieditor.h"
-#include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cview.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cviewcontainer.h"
+#include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
 #include "common/model_config.h"
@@ -21,11 +24,17 @@ namespace beatrice::vst {
 static constexpr auto kWindowWidth = 1280;
 static constexpr auto kWindowHeight = 720;
 
+class DescriptionPane;
+class DescriptionPopupView;
+class VoiceSelectorView;
+
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   using ParamID = Steinberg::Vst::ParamID;
   using ParamValue = Steinberg::Vst::ParamValue;
   using PlatformType = VSTGUI::PlatformType;
   using CView = VSTGUI::CView;
+  using CViewContainer = VSTGUI::CViewContainer;
 
  public:
   explicit Editor(void* controller);
@@ -36,72 +45,61 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   void SyncValue(ParamID param_id, float plain_value);
   void SyncStringValue(ParamID param_id, const std::u8string& value);
   void valueChanged(CControl* pControl) SMTG_OVERRIDE;
+  void controlBeginEdit(CControl* control) SMTG_OVERRIDE;
+  void controlEndEdit(CControl* control) SMTG_OVERRIDE;
   // auto notify(CBaseObject* sender,
   //                       const char* message) -> CMessageResult SMTG_OVERRIDE;
 
  private:
-  static constexpr auto kHeaderHeight = 56;
-  static constexpr auto kFooterHeight = 32;
-  static constexpr auto kColumnMerginY = 0;
-  static constexpr auto kColumnMerginX = 1;
-  static constexpr auto kColumnWidth = 400 - kColumnMerginX;
-  static constexpr auto kInnerColumnMerginY = 12;
-  static constexpr auto kInnerColumnMerginX = 12;
-  static constexpr auto kGroupLabelMerginY = 12;
-  static constexpr auto kGroupIndentX = 4;
-  static constexpr auto kElementWidth = 224;
-  static constexpr auto kElementHeight = 24;
-  static constexpr auto kElementMerginY = 8;
-  static constexpr auto kElementMerginX = 8;
-  static constexpr auto kLabelWidth =
-      kColumnWidth - 2 * (kInnerColumnMerginX + kGroupIndentX) - kElementWidth -
-      kElementMerginX;
-  static constexpr auto kPortraitColumnWidth =
-      kWindowWidth - 2 * (kColumnWidth + kColumnMerginX);
-  static constexpr auto kPortraitWidth = kPortraitColumnWidth;
+  static constexpr auto kPortraitWidth = 480;
   static constexpr auto kPortraitHeight = kPortraitWidth;
-  struct Context {
-    int y = kHeaderHeight + kColumnMerginY;
-    int x = 0;
-    int column_start_y = -1;
-    int column_start_x = -1;
-    int column_width = -1;
-    CColor column_back_color;
-    int last_element_mergin = 0;
-    bool first_group = true;
-    std::vector<CView*> column_elements;
-  };
   void SyncSourcePitchRange();
   void SyncModelDescription();
   void SyncParameterAvailability();
-  static void BeginColumn(Context&, int width, const CColor& back_color);
-  auto EndColumn(Context&) -> CView*;
-  auto BeginGroup(Context&, const std::u8string& name) -> CView*;
-  static void EndGroup(Context&);
-  auto MakeSlider(Context&, ParamID param_id, int precision = 1,
-                  float wheel_inc = 1.0f, float fine_wheel_inc = 0.1f)
-      -> CView*;
-  auto MakeCombobox(Context&, ParamID, const CColor&, const CColor&) -> CView*;
-  auto MakeFileSelector(Context&, ParamID param_id) -> CView*;
-  auto MakePortraitView(Context&) -> CView*;
-  auto MakeModelVoiceDescription(Context&) -> CView*;
-  auto MakePortraitDescription(Context&) -> CView*;
-  static void BeginTabColumn(Context&, int width, const CColor& back_color);
-  auto EndTabColumn(Context&) -> CView*;
-  void SyncVoiceMorphingDescription();
+  void SelectPage(int page);
+  void SetPortraitDescriptionText(const std::u8string& text);
+  void SetModelDescriptionText(const std::u8string& text);
+  void SetVoiceDescriptionText(const std::u8string& text);
+  void SetPortraitDescriptionMode(bool morphing);
+  void SetVoiceSelectorDisplay(int voice_id);
+  void ToggleVoiceMenu();
+  void HideVoiceMenu();
+  void RebuildVoiceMenu();
+  void ShowDescriptionPopup(const char* title, const std::u8string& text,
+                            CRect size);
+  void HideDescriptionPopup();
+  void PerformParameterEdit(ParamID param_id, ParamValue normalized_value);
+  void SendParameterEdit(ParamID param_id, ParamValue normalized_value);
 
   std::map<ParamID, CControl*> controls_;
-  CFontRef font_, font_bold_, font_description_, font_version_;
+  CFontRef font_, font_bold_, font_description_, font_small_;
+  CFontRef font_heading_, font_strong_;
   std::optional<common::ModelConfig> model_config_;
 
-  ModelVoiceDescription* model_voice_description_;
+  // Portrait 表示
+  CView* portrait_view_ = nullptr;
+  CView* unloaded_logo_view_ = nullptr;
+  DescriptionPane* portrait_description_pane_ = nullptr;
 
-  VSTGUI::CTabView* tab_view_;
+  // Model / Voice Description
+  DescriptionPane* model_description_pane_ = nullptr;
+  DescriptionPane* voice_description_pane_ = nullptr;
 
-  CView* portrait_view_;
-  CMultiLineTextLabel* portrait_description_;
+  // Voice 選択
+  VoiceSelectorView* voice_selector_ = nullptr;
 
+  // Description popup
+  DescriptionPopupView* description_popup_ = nullptr;
+
+  // Header / Page
+  CTextLabel* model_name_label_ = nullptr;
+  std::array<CViewContainer*, 2> page_views_;
+  std::array<CTextLabel*, 2> page_tabs_;
+  CView* tab_indicator_ = nullptr;
+
+  // Portrait bitmap cache
   std::map<std::u8string, SharedPointer<CBitmap>> portraits_;
+  std::map<std::u8string, SharedPointer<CBitmap>> portrait_menu_thumbnails_;
 };
 
 }  // namespace beatrice::vst
