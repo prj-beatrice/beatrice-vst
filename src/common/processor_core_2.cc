@@ -2,20 +2,28 @@
 
 #include "common/processor_core_2.h"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <numeric>
+#include <random>
+#include <vector>
 
+#include "beatricelib/beatrice.h"
 #include "common/error.h"
 #include "common/model_config.h"
+#include "common/voice_morph_state.h"
 
 namespace beatrice::common {
 
 auto ProcessorCore2::GetVersion() const -> int { return 2; }
 auto ProcessorCore2::Process(const float* const input, float* const output,
                              const int n_samples) -> ErrorCode {
-  const auto fill_zero = [output, n_samples] {
+  const auto fill_zero = [output, n_samples]() -> void {
     std::memset(output, 0, sizeof(float) * n_samples);
   };
   if (!IsLoaded()) {
@@ -86,7 +94,7 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
     // 重みを抽選確率として用いて毎フレームランダムな話者ののものを抽選で選ぶ場合
     // この場合も codebook のサイズは (n_speaker_+1)ではなくて(n_speaker_)で十分
     // discrete_distribution::param() は内部で std::vector を確保するので
-    // ここでは抽選のみ行い、重み更新は SetSpeakerMorphingWeight 側に置く。
+    // ここでは抽選のみ行い、重み更新は SetSpeakerMorphingWeights 側に置く。
     auto idx = speaker_morphing_codebook_lottery_(
         speaker_morphing_codebook_lottery_engine_);
     Beatrice20rc0_SetCodebook(
@@ -389,7 +397,7 @@ auto ProcessorCore2::LoadModel(const ModelConfig& /*config*/,
 
   model_file_ = new_model_file;
 
-  return ErrorCode::kSuccess;
+  return ApplySpeakerMorphingWeights();
 }
 
 auto ProcessorCore2::SetSampleRate(const double new_sample_rate) -> ErrorCode {
@@ -469,47 +477,53 @@ auto ProcessorCore2::SetOutputGain(const double new_output_gain) -> ErrorCode {
   return ErrorCode::kSuccess;
 }
 
-auto ProcessorCore2::SetSpeakerMorphingWeight(int target_speaker_id,
-                                              double morphing_weight)
-    -> ErrorCode {
+auto ProcessorCore2::SetSpeakerMorphingWeights(
+    const std::array<float, kMaxNSpeakers>& weights) -> ErrorCode {
+  if (weights == speaker_morphing_weights_) {
+    return ErrorCode::kSuccess;
+  }
+  speaker_morphing_weights_ = weights;
+  return ApplySpeakerMorphingWeights();
+}
+
+auto ProcessorCore2::ApplySpeakerMorphingWeights() -> ErrorCode {
   if (!is_ready_to_set_speaker_) {
-    return ErrorCode::kModelNotLoaded;
+    return ErrorCode::kSuccess;
   }
-  if (target_speaker_id < 0 || target_speaker_id >= kMaxNSpeakers) {
-    return ErrorCode::kSpeakerIDOutOfRange;
+  const auto weights =
+      PrepareVoiceMorphWeights(speaker_morphing_weights_, n_speakers_);
+
+  /* 非ゼロ weight の個数が設定値を超えないように、大きい方から順番に残す */
+  auto& indices = speaker_morphing_weights_argsort_indices_;
+  std::iota(indices.data(), indices.data() + n_speakers_, 0);
+  std::sort(indices.data(), indices.data() + n_speakers_,
+            [&weights](const int a, const int b) -> bool {
+              return weights[a] > weights[b];
+            });
+  speaker_morphing_weights_pruned_.fill(0.0f);
+  const auto n_weights = std::min(n_speakers_, kSphAvgMaxNSpeakers);
+  for (auto i = 0; i < n_weights; ++i) {
+    speaker_morphing_weights_pruned_[indices[i]] = weights[indices[i]];
   }
-  speaker_morphing_weights_[target_speaker_id] =
-      static_cast<float>(morphing_weight);
 
-  if (target_speaker_id < n_speakers_) {
-    /* 非ゼロ weight の個数が設定値を超えないように、大きい方から順番に残す */
-    auto& indices = speaker_morphing_weights_argsort_indices_;
-    std::iota(indices.data(), indices.data() + n_speakers_, 0);
-    std::sort(
-        indices.data(), indices.data() + n_speakers_, [this](int a, int b) {
-          return speaker_morphing_weights_[a] > speaker_morphing_weights_[b];
-        });
-    for (int i = 0; i < kSphAvgMaxNSpeakers; ++i) {
-      speaker_morphing_weights_pruned_[indices[i]] =
-          speaker_morphing_weights_[indices[i]];
-    }
-    for (int i = kSphAvgMaxNSpeakers; i < n_speakers_; ++i) {
-      speaker_morphing_weights_pruned_[indices[i]] = 0.0f;
-    }
-
-    // codebook 抽選用の分布を更新する。Process1 内で毎フレーム param() を
-    // 呼ぶと audio スレッドで std::vector を確保することになるため、
-    // 重みが変わるこちら側で更新しておく。
-    speaker_morphing_codebook_lottery_.param(
-        std::discrete_distribution<int>::param_type(
-            speaker_morphing_weights_pruned_.begin(),
-            speaker_morphing_weights_pruned_.end()));
-
-    // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
-    // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、
-    // フラグだけ立てて次のフレームから更新するようにする。
-    speaker_morphing_state_counter_ = 0;
+  // codebook 抽選用の分布を更新する。Process1 内で毎フレーム param() を
+  // 呼ぶと audio スレッドで std::vector を確保することになるため、
+  // 重みが変わるこちら側で更新しておく。
+  auto lottery_weights = speaker_morphing_weights_pruned_;
+  if (std::ranges::none_of(lottery_weights, [](const auto weight) -> bool {
+        return weight > 0.0f;
+      })) {
+    // 全ゼロは抽選分布の前提を満たさないため、一様分布で抽選する。
+    std::fill_n(lottery_weights.begin(), n_speakers_, 1.0f);
   }
+  speaker_morphing_codebook_lottery_.param(
+      std::discrete_distribution<int>::param_type(lottery_weights.begin(),
+                                                  lottery_weights.end()));
+
+  // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
+  // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、
+  // フラグだけ立てて次のフレームから更新するようにする。
+  speaker_morphing_state_counter_ = 0;
   return ErrorCode::kSuccess;
 }
 

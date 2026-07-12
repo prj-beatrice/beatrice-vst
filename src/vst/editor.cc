@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <limits>
 #include <memory>
 
 #include "beatricelib/beatrice.h"
@@ -23,7 +22,7 @@
 // Beatrice
 #include "common/error.h"
 #include "common/parameter_schema.h"
-#include "common/processor_core_2.h"
+#include "common/voice_morph_parameter.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
 #include "vst/parameter.h"
@@ -59,9 +58,7 @@ Editor::Editor(void* const controller)
       font_version_(new CFontDesc("Segoe UI", 12)),
       tab_view_(),
       portrait_view_(),
-      portrait_description_(),
-      morphing_labels_(),
-      morphing_weights_view_() {
+      portrait_description_() {
   setRect(ViewRect(0, 0, kWindowWidth, kWindowHeight));
 }
 
@@ -162,9 +159,6 @@ auto PLUGIN_API Editor::open(void* const parent,
   EndTabColumn(context);
 
   BeginTabColumn(context, kPortraitColumnWidth, kDarkColorScheme.surface_3);
-  BeginGroup(context, u8"Voice Morphing Weights");
-  MakeVoiceMorphingView(context);
-  EndGroup(context);
   EndTabColumn(context);
 
   // 1 要素 1 クラスの方が良かったのか？？？
@@ -193,7 +187,6 @@ void PLUGIN_API Editor::close() {
     tab_view_ = nullptr;
     portrait_view_ = nullptr;
     portrait_description_ = nullptr;
-    morphing_weights_view_ = nullptr;
   }
 }
 
@@ -203,11 +196,21 @@ void PLUGIN_API Editor::close() {
 // valueChanged からも controller を介して間接的に呼ばれる。
 // 引数じゃなくて core から値を取った方が良い？
 void Editor::SyncValue(const ParamID param_id, const float plain_value) {
-  if (!frame || !controls_.contains(param_id)) {
+  if (!frame) {
+    return;
+  }
+  if (common::IsVoiceMorphParameter(static_cast<ParameterID>(param_id))) {
+    const auto* const voice_control =
+        controls_.at(static_cast<ParamID>(ParameterID::kVoice));
+    if (voice_control->getValue() == voice_control->getMax()) {
+      SyncVoiceMorphingDescription();
+    }
+    return;
+  }
+  if (!controls_.contains(param_id)) {
     return;
   }
   auto* const control = controls_.at(param_id);
-  const auto vst_param_id = static_cast<int>(param_id);
 
   // Voice は色々ややこしいので特別扱いする
   if (param_id == static_cast<ParamID>(ParameterID::kVoice)) {
@@ -232,21 +235,8 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       // model_voice_description_->SetVoiceDescription(
       //    u8"< Voice Morphing Mode >");
       SyncVoiceMorphingDescription();
-      SyncVoiceMorphingSliders();
       tab_view_->selectTab(1);
     }
-  } else if (vst_param_id >=
-                 static_cast<int>(ParameterID::kVoiceMorphWeights) &&
-             vst_param_id < static_cast<int>(ParameterID::kVoiceMorphWeights) +
-                                common::kMaxNSpeakers) {
-    auto* const voice_control =
-        controls_.at(static_cast<int>(ParameterID::kVoice));
-    const auto voice_id = voice_control->getValue();
-    control->setValue(plain_value);
-    if (voice_id > 0 && voice_id == static_cast<int>(voice_control->getMax())) {
-      SyncVoiceMorphingDescription();
-    }
-    SyncVoiceMorphingSliders();
   } else {
     control->setValue(plain_value);
   }
@@ -421,31 +411,6 @@ void Editor::SyncModelDescription() {
     }
 
     voice_combobox->setDirty();
-    for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
-      auto* const slider =
-          static_cast<Slider*>(controls_.at(static_cast<ParamID>(
-              static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-      auto* const label = morphing_labels_[i];
-      if (i < voice_counter) {
-        slider->setVisible(true);
-        slider->SetEnabled(true);
-        label->setVisible(true);
-        label->setText(reinterpret_cast<const char*>(
-            model_config_->voices[i].name.c_str()));
-      } else {
-        slider->setVisible(false);
-        slider->SetEnabled(false);
-        label->setVisible(false);
-        label->setText("");
-      }
-      slider->setDirty();
-      label->setDirty();
-    }
-    auto container_size = morphing_weights_view_->getContainerSize();
-    container_size.setHeight(voice_counter *
-                             (kElementHeight + kElementMerginY));
-    morphing_weights_view_->setContainerSize(container_size);
-
     const auto voice_id =
         Denormalize(std::get<common::ListParameter>(
                         common::kSchema.GetParameter(ParameterID::kVoice)),
@@ -464,7 +429,6 @@ void Editor::SyncModelDescription() {
       // model_voice_description_->SetVoiceDescription(u8"< Voice Morphing Mode
       // >");
       SyncVoiceMorphingDescription();
-      SyncVoiceMorphingSliders();
       tab_view_->selectTab(1);
     }
     model_voice_description_->SetModelDescription(
@@ -472,7 +436,6 @@ void Editor::SyncModelDescription() {
 
     portrait_view_->setDirty();
     portrait_description_->setDirty();
-    morphing_weights_view_->setDirty();
 
     if (auto* const column_view = model_voice_description_->getParentView()) {
       column_view->setDirty();
@@ -916,83 +879,10 @@ auto Editor::MakePortraitDescription(Context& context) -> CView* {
   return description;
 }
 
-auto Editor::MakeVoiceMorphingView(Context& context) -> CView* {
-  context.y += std::max(context.last_element_mergin, kElementMerginY);
-
-  const auto size =
-      CRect(context.x, context.y, context.column_width - context.x,
-            kWindowHeight - kFooterHeight - kHeaderHeight);
-  const auto container_size =
-      CRect(0, 0, size.getWidth(),
-            (kElementHeight + kElementMerginY) * common::kMaxNSpeakers);
-  morphing_weights_view_ =
-      new VSTGUI::CScrollView(size, container_size,
-                              VSTGUI::CScrollView::kVerticalScrollbar |
-                                  VSTGUI::CScrollView::kDontDrawFrame |
-                                  VSTGUI::CScrollView::kOverlayScrollbars);
-  // morphing_weights_view_->setAutosizeFlags( VSTGUI::kAutosizeRow |
-  // VSTGUI::kAutosizeBottom );
-  morphing_weights_view_->setBackgroundColor(kTransparentCColor);
-  auto scroll_bar = morphing_weights_view_->getVerticalScrollbar();
-  scroll_bar->setFrameColor(kDarkColorScheme.outline);
-  scroll_bar->setScrollerColor(kDarkColorScheme.secondary_dim);
-  scroll_bar->setBackgroundColor(kTransparentCColor);
-
-  static constexpr auto kHandleWidth = 10;  // 透明の左右の淵を含む
-  auto* const slider_bmp =
-      new MonotoneBitmap(kElementWidth, kElementHeight, kTransparentCColor,
-                         kDarkColorScheme.outline);
-  auto* const handle_bmp =
-      new MonotoneBitmap(kHandleWidth, kElementHeight,
-                         kDarkColorScheme.secondary_dim, kTransparentCColor);
-
-  const auto label_width = morphing_weights_view_->getWidth() - kElementWidth -
-                           kElementMerginX -
-                           morphing_weights_view_->getScrollbarWidth();
-  for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
-    const auto label_pos = CRect(0, 0, label_width, kElementHeight)
-                               .offset(kElementWidth + kElementMerginX,
-                                       i * (kElementHeight + kElementMerginY));
-    auto* const label_control =
-        new CTextLabel(label_pos, "", nullptr, CParamDisplay::kNoFrame);
-    label_control->setBackColor(kTransparentCColor);
-    label_control->setFont(font_);
-    label_control->setFontColor(kDarkColorScheme.on_surface);
-    label_control->setHoriAlign(CHoriTxtAlign::kLeftText);
-    label_control->setVisible(false);
-
-    morphing_weights_view_->addView(label_control);
-    morphing_labels_[i] = label_control;
-  }
-  for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
-    auto const vst_param_id =
-        static_cast<int>(ParameterID::kVoiceMorphWeights) + i;
-    auto const param_id = static_cast<ParamID>(vst_param_id);
-    auto* const param =
-        static_cast<LinearParameter*>(controller->getParameterObject(param_id));
-    auto* const slider_control = new Slider(
-        CRect(0, 0, kElementWidth, kElementHeight)
-            .offset(0, i * (kElementHeight + kElementMerginY)),
-        this, static_cast<int>(param_id), 0, kElementWidth - kHandleWidth,
-        handle_bmp, slider_bmp,
-        Steinberg::Vst::StringConvert::convert(param->getInfo().units), font_,
-        2);
-    slider_control->setValue(
-        static_cast<float>(param->toPlain(param->getNormalized())));
-    slider_control->setVisible(false);
-
-    morphing_weights_view_->addView(slider_control);
-    controls_.insert({vst_param_id, slider_control});
-  }
-
-  slider_bmp->forget();
-  handle_bmp->forget();
-
-  context.column_elements.push_back(morphing_weights_view_);
-  return morphing_weights_view_;
-}
-
 void Editor::SyncVoiceMorphingDescription() {
+  if (!model_config_.has_value()) {
+    return;
+  }
   std::u8string str;
 
   str += u8"[注意 / Caution]";
@@ -1008,73 +898,20 @@ void Editor::SyncVoiceMorphingDescription() {
       u8"infringement.\n";
   str += u8"\n";
 
-  for (auto i = 0; i < common::kMaxNSpeakers; ++i) {
-    if (morphing_labels_[i]->isVisible()) {
-      auto control =
-          controls_.at(static_cast<int>(ParameterID::kVoiceMorphWeights) + i);
-      if (control->getValue() >=
-          (0.01f - std::numeric_limits<float>::epsilon())) {
-        str += model_config_->voices[i].name;
-        str += u8"\n";
-        str += model_config_->voices[i].description;
-        str += u8"\n";
-      }
-    } else {
-      break;
+  const auto* const controller = static_cast<Controller*>(getController());
+  const auto weights =
+      common::GetVoiceMorphState(controller->core_.parameter_state_)
+          .CalculateWeights();
+  const auto voice_count = common::GetVoiceCount(*model_config_);
+  for (auto i = 0; i < voice_count; ++i) {
+    if (weights[i] >= common::kVoiceMorphWeightThreshold) {
+      str += model_config_->voices[i].name;
+      str += u8"\n";
+      str += model_config_->voices[i].description;
+      str += u8"\n";
     }
   }
   model_voice_description_->SetVoiceDescription(str);
-}
-
-void Editor::SyncVoiceMorphingSliders() {
-  if (model_config_ && model_config_->model.VersionInt() >= 2) {
-    int non_zero_count = 0;
-    auto f_set_zero = [this](Slider* slider) {
-      slider->setValue(0.0f);
-      slider->setDirty();
-    };
-
-    for (int i = 0; i < common::kMaxNSpeakers; ++i) {
-      auto* const slider =
-          static_cast<Slider*>(controls_.at(static_cast<ParamID>(
-              static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-
-      // UIをゆっくり動かしたときなどにたまに0に見えて微小な値を持っているような
-      // 挙動が見られたため、その場合のケア
-      // 閾値はスライダーの段階依存なので、スライダーの段階に応じた適切な値を設定する
-      if (slider->getValue() >=
-          (0.01f - std::numeric_limits<float>::epsilon())) {
-        ++non_zero_count;
-      } else {
-        f_set_zero(slider);
-      }
-    }
-
-    if (non_zero_count < common::ProcessorCore2::kSphAvgMaxNSpeakers) {
-      // 非ゼロの重みの数が上限を下回っていた場合はすべてのスライダーを有効化する
-      for (int i = 0; i < common::kMaxNSpeakers; ++i) {
-        auto* const slider =
-            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
-                static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-        slider->SetEnabled(true);
-      }
-    } else {
-      // 非ゼロの重みの数が上限に達していた場合、重みゼロのスライダーのみ無効化して
-      // GUI経由でそれ以上非ゼロの重みが増えないようにする
-      // (DAW側からは変化しうるので、非ゼロの重みが増えることはある)
-      for (int i = 0; i < common::kMaxNSpeakers; ++i) {
-        auto* const slider =
-            static_cast<Slider*>(controls_.at(static_cast<ParamID>(
-                static_cast<int>(ParameterID::kVoiceMorphWeights) + i)));
-        if (slider->getValue() >=
-            (0.01f - std::numeric_limits<float>::epsilon())) {
-          slider->SetEnabled(true);
-        } else {
-          slider->SetEnabled(false);
-        }
-      }
-    }
-  }
 }
 
 }  // namespace beatrice::vst

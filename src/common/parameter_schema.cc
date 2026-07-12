@@ -2,20 +2,44 @@
 
 #include "common/parameter_schema.h"
 
+#include <algorithm>
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <stdexcept>
+#include <string>
+#include <vector>
 
+#include "toml11/single_include/toml.hpp"
+
+// Beatrice
 #include "common/controller_core.h"
+#include "common/error.h"
+#include "common/model_config.h"
 #include "common/processor_core.h"
 #include "common/processor_proxy.h"
-#include "toml11/single_include/toml.hpp"
+#include "common/voice_morph_parameter.h"
+#include "common/voice_morph_state.h"
 
 namespace beatrice::common {
 
-using std::operator""s;
+using namespace std::string_literals;
 
 static constexpr auto kMaxAbsPitchShift = 24.0;
+
+namespace {
+
+auto SetVoiceMorphParameterOnController(ControllerCore&, double) -> ErrorCode {
+  return ErrorCode::kSuccess;
+}
+
+auto SetVoiceMorphParameterOnProcessor(ProcessorProxy& processor, double)
+    -> ErrorCode {
+  return processor.GetCore()->SetSpeakerMorphingWeights(
+      GetVoiceMorphState(processor.GetParameterState()).CalculateWeights());
+}
+
+}  // namespace
 
 // パラメータの追加には以下 3 箇所の変更が必要
 // * parameter_schema.h, parameter_schema.cc (メタデータの設定)
@@ -25,6 +49,7 @@ static constexpr auto kMaxAbsPitchShift = 24.0;
 // パラメータ ID に対して、そのパラメータはどのような名前で、
 // どのような値域を持ち、どのような操作に対応するのかを保持する。
 const ParameterSchema kSchema = [] {
+  constexpr auto kDefaultVoiceMorphState = VoiceMorphState{};
   auto schema = ParameterSchema({
       {ParameterID::kModel,
        StringParameter(
@@ -93,15 +118,14 @@ const ParameterSchema kSchema = [] {
                  static_cast<int>(ParameterID::kAverageTargetPitchBase) +
                  voice_count));
 
-             // kVoiceMorphWeightss
-             for (auto i = 0; i < kMaxNSpeakers; ++i) {
-               controller.parameter_state_.SetValue(
-                   static_cast<ParameterID>(
-                       static_cast<int>(ParameterID::kVoiceMorphWeights) + i),
-                   0.0);
-               controller.updated_parameters_.push_back(
-                   static_cast<ParameterID>(
-                       static_cast<int>(ParameterID::kVoiceMorphWeights) + i));
+             // Voice Morph
+             auto voice_morph_state = VoiceMorphState();
+             voice_morph_state.marker_count =
+                 std::min(voice_count, kDefaultNVoiceMorphMarkers);
+             for (const auto [param_id, param_value] :
+                  GetVoiceMorphParameterValues(voice_morph_state)) {
+               controller.parameter_state_.SetValue(param_id, param_value);
+               controller.updated_parameters_.push_back(param_id);
              }
 
              const auto average_target_pitch =
@@ -203,7 +227,7 @@ const ParameterSchema kSchema = [] {
            })},
       {ParameterID::kFormantShift,
        NumberParameter(
-           u8"Formant Shift"s, 0.0, -2.0, 2.0, u8"semitones"s, 8, u8"For"s,
+           u8"Formant Shift"s, 0.0, -2.0, 2.0, u8"st"s, 8, u8"For"s,
            parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const double value) {
              const auto target_speaker = std::get<int>(
@@ -250,7 +274,7 @@ const ParameterSchema kSchema = [] {
       {ParameterID::kPitchShift,
        NumberParameter(
            u8"Pitch Shift"s, 0.0, -kMaxAbsPitchShift, kMaxAbsPitchShift,
-           u8"semitones"s, 48 * 8, u8"Pit"s, parameter_flag::kCanAutomate,
+           u8"st"s, 48 * 8, u8"Pit"s, parameter_flag::kCanAutomate,
            [](ControllerCore& controller, const double value) {
              // AverageSourcePitch を変更する
              const auto target_speaker = std::get<int>(
@@ -371,7 +395,64 @@ const ParameterSchema kSchema = [] {
              return vc.GetCore()->SetVQNumNeighbors(
                  static_cast<int>(std::round(value)));
            })},
+      {ParameterID::kVoiceMorphCursorX,
+       NumberParameter(u8"Morph Cursor X"s, kDefaultVoiceMorphState.cursor_x,
+                       0.0, 1.0, u8""s, 1000, u8"MrphCX"s,
+                       parameter_flag::kCanAutomate,
+                       SetVoiceMorphParameterOnController,
+                       SetVoiceMorphParameterOnProcessor)},
+      {ParameterID::kVoiceMorphCursorY,
+       NumberParameter(u8"Morph Cursor Y"s, kDefaultVoiceMorphState.cursor_y,
+                       0.0, 1.0, u8""s, 1000, u8"MrphCY"s,
+                       parameter_flag::kCanAutomate,
+                       SetVoiceMorphParameterOnController,
+                       SetVoiceMorphParameterOnProcessor)},
+      {ParameterID::kVoiceMorphFalloff,
+       NumberParameter(u8"Morph Falloff"s, kDefaultVoiceMorphState.falloff,
+                       kVoiceMorphFalloffMin, kVoiceMorphFalloffMax, u8""s,
+                       kVoiceMorphFalloffDivisions, u8"MrphFo"s,
+                       parameter_flag::kCanAutomate,
+                       SetVoiceMorphParameterOnController,
+                       SetVoiceMorphParameterOnProcessor)},
+      {ParameterID::kVoiceMorphMarkerCount,
+       NumberParameter(
+           u8"Morph Marker Count"s, kDefaultVoiceMorphState.marker_count, 1.0,
+           kMaxNVoiceMorphMarkers, u8""s, kMaxNVoiceMorphMarkers - 1,
+           u8"MrphCt"s, parameter_flag::kCanAutomate,
+           SetVoiceMorphParameterOnController,
+           SetVoiceMorphParameterOnProcessor)},
   });
+
+  for (auto i = 0; i < kMaxNVoiceMorphMarkers; ++i) {
+    const auto& default_marker = kDefaultVoiceMorphState.markers[i];
+    const auto i_ascii = std::to_string(i);
+    const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
+    schema.AddParameter(
+        static_cast<ParameterID>(
+            static_cast<int>(ParameterID::kVoiceMorphMarkerVoiceBase) + i),
+        NumberParameter(
+            u8"Morph Marker "s + i_u8 + u8" Voice"s, default_marker.voice_id,
+            0.0, static_cast<double>(kMaxNSpeakers - 1), u8""s,
+            kMaxNSpeakers - 1, u8"MrphV"s, parameter_flag::kCanAutomate,
+            SetVoiceMorphParameterOnController,
+            SetVoiceMorphParameterOnProcessor));
+    schema.AddParameter(
+        static_cast<ParameterID>(
+            static_cast<int>(ParameterID::kVoiceMorphMarkerXBase) + i),
+        NumberParameter(u8"Morph Marker "s + i_u8 + u8" X"s, default_marker.x,
+                        0.0, 1.0, u8""s, 1000, u8"MrphX"s,
+                        parameter_flag::kCanAutomate,
+                        SetVoiceMorphParameterOnController,
+                        SetVoiceMorphParameterOnProcessor));
+    schema.AddParameter(
+        static_cast<ParameterID>(
+            static_cast<int>(ParameterID::kVoiceMorphMarkerYBase) + i),
+        NumberParameter(u8"Morph Marker "s + i_u8 + u8" Y"s, default_marker.y,
+                        0.0, 1.0, u8""s, 1000, u8"MrphY"s,
+                        parameter_flag::kCanAutomate,
+                        SetVoiceMorphParameterOnController,
+                        SetVoiceMorphParameterOnProcessor));
+  }
 
   for (auto i = 0; i < kMaxNSpeakers + 1;
        ++i) {  // Voice Morphing Mode の分も格納するため、要素数は (
@@ -384,37 +465,13 @@ const ParameterSchema kSchema = [] {
         NumberParameter(
             u8"Speaker "s + i_u8, 60.0, 0.0, 128.0, u8""s, 128 * 8, u8"TgtPit"s,
             parameter_flag::kIsReadOnly | parameter_flag::kIsHidden,
-            [](ControllerCore&, double) { return ErrorCode::kSuccess; },
-            [](ProcessorProxy&, double) { return ErrorCode::kSuccess; }));
-  }
-  for (auto i = 0; i < kMaxNSpeakers;
-       ++i) {  // こちらの要素数は kMaxNSpeakers で良い
-    const auto i_ascii = std::to_string(i);
-    const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
-    schema.AddParameter(
-        static_cast<ParameterID>(
-            static_cast<int>(ParameterID::kVoiceMorphWeights) + i),
-        NumberParameter(
-            u8"Voice "s + i_u8 + u8"'s Weight"s, 0.0, 0.0, 1.0, u8""s, 100,
-            u8"VcWght"s, parameter_flag::kCanAutomate,
-            [](ControllerCore& controller, double value) {
-              // マージの比率に応じて AverageTargetPitchBase も変える？
-              // そこまでする必要は無さそうに感じたので、とりあえず保留。
+            [](ControllerCore&, double) -> ErrorCode {
               return ErrorCode::kSuccess;
             },
-            // ここ、NumberParameter::processor_set_value_
-            // が関数ポインタのままだと
-            // キャプチャ付きのラムダ式を格納できなかった。
-            // std::function を用いる定義に書き直すと格納できるようになる。
-            [i](ProcessorProxy& vc, double value) {
-              // 微小な非ゼロの値が入ってると面倒なので念の為ゼロに丸める
-              if (value < 0.01 - std::numeric_limits<double>::epsilon()) {
-                value = 0.0;
-              }
-              return vc.GetCore()->SetSpeakerMorphingWeight(i, value);
+            [](ProcessorProxy&, double) -> ErrorCode {
+              return ErrorCode::kSuccess;
             }));
   }
-
   return schema;
 }();
 }  // namespace beatrice::common

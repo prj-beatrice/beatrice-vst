@@ -9,7 +9,6 @@
 
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
 #include "vst3sdk/public.sdk/source/vst/vstguieditor.h"
-#include "vst3sdk/vstgui4/vstgui/lib/cscrollview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/ctabview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cview.h"
 
@@ -89,9 +88,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   auto MakePortraitDescription(Context&) -> CView*;
   static void BeginTabColumn(Context&, int width, const CColor& back_color);
   auto EndTabColumn(Context&) -> CView*;
-  auto MakeVoiceMorphingView(Context&) -> CView*;
   void SyncVoiceMorphingDescription();
-  void SyncVoiceMorphingSliders();
 
   std::map<ParamID, CControl*> controls_;
   CFontRef font_, font_bold_, font_description_, font_version_;
@@ -105,9 +102,6 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   CMultiLineTextLabel* portrait_description_;
 
   std::map<std::u8string, SharedPointer<CBitmap>> portraits_;
-
-  std::array<CTextLabel*, common::kMaxNSpeakers> morphing_labels_;
-  VSTGUI::CScrollView* morphing_weights_view_;
 };
 
 }  // namespace beatrice::vst

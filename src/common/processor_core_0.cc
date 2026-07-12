@@ -2,11 +2,13 @@
 
 #include "common/processor_core_0.h"
 
+#include <array>
 #include <cassert>
 #include <cstring>
 #include <filesystem>
 
 #include "common/model_config.h"
+#include "common/voice_morph_state.h"
 
 namespace beatrice::common {
 
@@ -212,7 +214,7 @@ auto ProcessorCore0::LoadModel(const ModelConfig& /*config*/,
 
   model_file_ = new_model_file;
 
-  return ErrorCode::kSuccess;
+  return ApplySpeakerMorphingWeights();
 }
 
 auto ProcessorCore0::SetSampleRate(const double new_sample_rate) -> ErrorCode {
@@ -255,15 +257,22 @@ auto ProcessorCore0::SetOutputGain(const double new_output_gain) -> ErrorCode {
   return ErrorCode::kSuccess;
 }
 
-auto ProcessorCore0::SetSpeakerMorphingWeight(int target_speaker_id,
-                                              double morphing_weight)
-    -> ErrorCode {
-  if (target_speaker_id < 0 || target_speaker_id >= kMaxNSpeakers) {
-    return ErrorCode::kSpeakerIDOutOfRange;
+auto ProcessorCore0::SetSpeakerMorphingWeights(
+    const std::array<float, kMaxNSpeakers>& weights) -> ErrorCode {
+  if (weights == speaker_morphing_weights_) {
+    return ErrorCode::kSuccess;
   }
-  speaker_morphing_weights_[target_speaker_id] =
-      static_cast<float>(morphing_weight);
-  sph_avg_.SetWeights(n_speakers_, speaker_morphing_weights_.data());
+  speaker_morphing_weights_ = weights;
+  return ApplySpeakerMorphingWeights();
+}
+
+auto ProcessorCore0::ApplySpeakerMorphingWeights() -> ErrorCode {
+  if (!IsLoaded()) {
+    return ErrorCode::kSuccess;
+  }
+  const auto weights =
+      PrepareVoiceMorphWeights(speaker_morphing_weights_, n_speakers_);
+  sph_avg_.SetWeights(n_speakers_, weights.data());
   sph_avg_.GetResult(
       BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS,
       &speaker_embeddings_[n_speakers_ *

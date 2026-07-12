@@ -14,6 +14,7 @@
 
 #include "common/error.h"
 #include "common/model_config.h"
+#include "common/voice_morph_state.h"
 
 namespace beatrice::common {
 
@@ -57,13 +58,24 @@ enum class ParameterID : std::int16_t {
   kMinSourcePitch = 12,
   kMaxSourcePitch = 13,
   kVQNumNeighbors = 14,
+  kVoiceMorphCursorX = 15,
+  kVoiceMorphCursorY = 16,
+  kVoiceMorphFalloff = 17,
+  kVoiceMorphMarkerCount = 18,
+  kVoiceMorphMarkerVoiceBase = 19,
+  kVoiceMorphMarkerXBase = kVoiceMorphMarkerVoiceBase + kMaxNVoiceMorphMarkers,
+  kVoiceMorphMarkerYBase = kVoiceMorphMarkerXBase + kMaxNVoiceMorphMarkers,
   kAverageTargetPitchBase = 100,
-  // Voice Morphing Mode の分も格納するため、要素数は(kMaxNSpeakers + 1)となる
-  kVoiceMorphWeights =
-      kAverageTargetPitchBase +
-      (kMaxNSpeakers + 1),  // Voice Morphing Mode の重みを保存するのに使う
-  kSentinel = kVoiceMorphWeights + kMaxNSpeakers,
+  kEnd = kAverageTargetPitchBase + kMaxNSpeakers + 1,
 };
+
+inline auto IsVoiceMorphParameter(const ParameterID param_id) -> bool {
+  const auto id = static_cast<int>(param_id);
+  const auto last_id = static_cast<int>(ParameterID::kVoiceMorphMarkerYBase) +
+                       kMaxNVoiceMorphMarkers;
+  return id >= static_cast<int>(ParameterID::kVoiceMorphCursorX) &&
+         id < last_id;
+}
 
 class NumberParameter {
  public:

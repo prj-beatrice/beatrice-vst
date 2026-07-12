@@ -3,6 +3,8 @@
 #ifndef BEATRICE_COMMON_PROCESSOR_CORE_H_
 #define BEATRICE_COMMON_PROCESSOR_CORE_H_
 
+#include <array>
+
 #include "common/error.h"
 #include "common/model_config.h"
 
@@ -76,10 +78,8 @@ class ProcessorCoreBase {
     return ErrorCode::kSuccess;
   }
 
-  virtual auto SetSpeakerMorphingWeight(int /*target_speaker*/,
-                                        double /*morphing weight*/
-                                        )      // NOLINT(whitespace/parens)
-      -> ErrorCode {
+  virtual auto SetSpeakerMorphingWeights(
+      const std::array<float, kMaxNSpeakers>& /*weights*/) -> ErrorCode {
     return ErrorCode::kSuccess;
   }
 
