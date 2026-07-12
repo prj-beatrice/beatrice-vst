@@ -41,9 +41,13 @@
 #include "common/error.h"
 #include "common/model_config.h"
 #include "common/parameter_schema.h"
+#include "common/voice_morph_parameter.h"
+#include "common/voice_morph_state.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
 #include "vst/editor_description.h"
+#include "vst/editor_morph.h"
+#include "vst/editor_morph_controller.h"
 #include "vst/editor_views.h"
 #include "vst/editor_voice_selector.h"
 #include "vst/parameter.h"
@@ -498,6 +502,15 @@ auto PLUGIN_API Editor::open(void* const parent,
   portrait_panel->addView(unloaded_logo_view_);
   unloaded_logo->forget();
 
+  morph_pad_controller_ = std::make_unique<MorphPadController>(
+      beatrice_controller->core_, *beatrice_controller);
+  auto* const morph_pad =
+      new MorphPadView(CRect(0, 0, 480, 480), morph_pad_controller_.get(),
+                       font_bold_, font_small_);
+  morph_pad_view_ = morph_pad;
+  morph_pad_view_->setVisible(false);
+  portrait_panel->addView(morph_pad_view_);
+
   portrait_description_pane_ = new DescriptionPane(
       CRect(302, 500, 782, 572), panel_surface, CColor(0xff, 0xff, 0xff, 0x0a),
       2.0, "PORTRAIT DESCRIPTION", CRect(14, 8, 466, 26),
@@ -509,6 +522,30 @@ auto PLUGIN_API Editor::open(void* const parent,
         ShowDescriptionPopup(title, text, popup_rect);
       });
   main_page->addView(portrait_description_pane_);
+
+  const auto falloff_rect = CRect(14, 28, 466, 71);
+  auto* const falloff_slider_bmp =
+      new MonotoneBitmap(static_cast<int>(falloff_rect.getWidth()),
+                         static_cast<int>(falloff_rect.getHeight()),
+                         kTransparentCColor, kTransparentCColor);
+  auto* const falloff_handle_bmp = new MonotoneBitmap(
+      kSliderKnobWidth, 18, CColor(0xc3, 0xa0, 0x66), kTransparentCColor);
+  auto* const morph_falloff = new MorphFalloffSlider(
+      falloff_rect, this, static_cast<int32_t>(ParameterID::kVoiceMorphFalloff),
+      falloff_handle_bmp, falloff_slider_bmp, font_small_, font_bold_);
+  morph_falloff->SetAuxiliaryLabelStateChangedCallback(
+      [this](const bool show_labels) -> void {
+        if (morph_pad_view_) {
+          morph_pad_view_->SetShowAuxiliaryLabels(show_labels);
+        }
+      });
+  morph_falloff_slider_ = morph_falloff;
+  morph_falloff_slider_->setVisible(false);
+  portrait_description_pane_->addView(morph_falloff_slider_);
+  register_control(static_cast<ParamID>(ParameterID::kVoiceMorphFalloff),
+                   morph_falloff);
+  falloff_slider_bmp->forget();
+  falloff_handle_bmp->forget();
 
   // Main ページ右
   auto* voice_panel = add_panel(main_page, CRect(792, 10, 1266, 244));
@@ -614,14 +651,21 @@ auto PLUGIN_API Editor::open(void* const parent,
 }
 void PLUGIN_API Editor::close() {
   if (frame) {
+    if (morph_pad_view_ && morph_pad_view_->isEditing()) {
+      morph_pad_view_->endEdit();
+    }
     frame->forget();
     frame = nullptr;
     controls_.clear();
     portraits_.clear();
     portrait_menu_thumbnails_.clear();
+    portrait_marker_thumbnails_.clear();
     portrait_view_ = nullptr;
     unloaded_logo_view_ = nullptr;
+    morph_pad_controller_.reset();
+    morph_pad_view_ = nullptr;
     portrait_description_pane_ = nullptr;
+    morph_falloff_slider_ = nullptr;
     model_description_pane_ = nullptr;
     voice_description_pane_ = nullptr;
     voice_selector_ = nullptr;
@@ -630,6 +674,7 @@ void PLUGIN_API Editor::close() {
     page_views_ = {};
     page_tabs_ = {};
     tab_indicator_ = nullptr;
+    voice_morph_state_ = {};
   }
 }
 
@@ -687,6 +732,10 @@ void Editor::SetPortraitDescriptionMode(const bool morphing) {
                                                   : "PORTRAIT DESCRIPTION");
     portrait_description_pane_->SetBodyVisible(!morphing);
   }
+  if (morph_falloff_slider_) {
+    morph_falloff_slider_->setVisible(morphing);
+    morph_falloff_slider_->setDirty();
+  }
 }
 
 void Editor::SetVoiceSelectorDisplay(const int voice_id) {
@@ -728,6 +777,28 @@ void Editor::HideDescriptionPopup() {
   }
 }
 
+void Editor::ApplyVoiceMorphState(const common::VoiceMorphState& state) {
+  voice_morph_state_ = state;
+  if (model_config_.has_value()) {
+    const auto voice_count = common::GetVoiceCount(*model_config_);
+    assert(voice_count > 0);
+    if (voice_count > 0) {
+      for (auto i = 0; i < voice_morph_state_.marker_count; ++i) {
+        voice_morph_state_.markers[i].voice_id = std::clamp(
+            voice_morph_state_.markers[i].voice_id, 0, voice_count - 1);
+      }
+    }
+  }
+
+  if (morph_pad_view_) {
+    morph_pad_view_->SetState(voice_morph_state_);
+  }
+  if (morph_falloff_slider_) {
+    morph_falloff_slider_->SetValue(voice_morph_state_.falloff);
+  }
+  UpdateVoiceMorphingDescription();
+}
+
 void Editor::PerformParameterEdit(const ParamID param_id,
                                   const ParamValue normalized_value) {
   auto* const controller = static_cast<Controller*>(getController());
@@ -753,6 +824,9 @@ void Editor::SendParameterEdit(const ParamID param_id,
 void Editor::SyncValue(const ParamID param_id, const float plain_value) {
   const auto parameter_id = static_cast<ParameterID>(param_id);
   if (common::IsVoiceMorphParameter(parameter_id)) {
+    auto* const controller = static_cast<Controller*>(getController());
+    ApplyVoiceMorphState(
+        common::GetVoiceMorphState(controller->core_.parameter_state_));
     return;
   }
 
@@ -768,6 +842,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       portrait_view_->setBackground(nullptr);
       portrait_view_->setVisible(false);
       unloaded_logo_view_->setVisible(true);
+      morph_pad_view_->setVisible(false);
       SetPortraitDescriptionMode(false);
       SetPortraitDescriptionText(u8"");
       SetVoiceDescriptionText(u8"");
@@ -778,6 +853,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
           portraits_.at(model_config_->voices[voice_id].portrait.path).get());
       portrait_view_->setVisible(true);
       unloaded_logo_view_->setVisible(false);
+      morph_pad_view_->setVisible(false);
       SetPortraitDescriptionMode(false);
       SetVoiceSelectorDisplay(voice_id);
       SetPortraitDescriptionText(
@@ -786,10 +862,12 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
     } else {
       portrait_view_->setBackground(nullptr);
       portrait_view_->setVisible(false);
-      unloaded_logo_view_->setVisible(true);
+      unloaded_logo_view_->setVisible(false);
+      morph_pad_view_->setVisible(true);
       SetPortraitDescriptionMode(true);
       SetPortraitDescriptionText(u8"");
       SetVoiceSelectorDisplay(-2);
+      UpdateVoiceMorphingDescription();
     }
     if (voice_selector_ && voice_selector_->IsMenuVisible()) {
       RebuildVoiceMenu();
@@ -881,11 +959,18 @@ void Editor::SyncModelDescription() {
   if (unloaded_logo_view_) {
     unloaded_logo_view_->setVisible(true);
   }
+  if (morph_pad_view_) {
+    morph_pad_view_->setVisible(false);
+  }
   model_config_ = std::nullopt;
   SetVoiceSelectorDisplay(-1);
   RebuildVoiceMenu();
   portraits_.clear();
   portrait_menu_thumbnails_.clear();
+  portrait_marker_thumbnails_.clear();
+  if (morph_pad_view_) {
+    morph_pad_view_->SetVoices({}, {});
+  }
   if (file.empty()) {
     // 初期状態
     return;
@@ -937,17 +1022,22 @@ void Editor::SyncModelDescription() {
         auto rounded_portrait = MakeRoundedBitmap(
             original_bitmap.get(), kPortraitWidth, kPortraitHeight, 4.0);
         auto menu_thumbnail = ScaleBitmap(original_bitmap.get(), 42, 42);
-        if (!rounded_portrait || !menu_thumbnail) {
+        auto circular_thumbnail =
+            MakeRoundedBitmap(original_bitmap.get(), 58, 58, 29.0);
+        if (!rounded_portrait || !menu_thumbnail || !circular_thumbnail) {
           goto load_portrait_failed;
         }
         portraits_.insert({voice.portrait.path, rounded_portrait});
         portrait_menu_thumbnails_.insert({voice.portrait.path, menu_thumbnail});
+        portrait_marker_thumbnails_.insert(
+            {voice.portrait.path, circular_thumbnail});
         goto load_portrait_succeeded;
       }
       assert(false);
     load_portrait_failed:
       portraits_.insert({voice.portrait.path, nullptr});
       portrait_menu_thumbnails_.insert({voice.portrait.path, nullptr});
+      portrait_marker_thumbnails_.insert({voice.portrait.path, nullptr});
     load_portrait_succeeded: {}
     }
 
@@ -958,9 +1048,31 @@ void Editor::SyncModelDescription() {
       voice_menu->addEntry("Voice Morphing Mode", -1, flags);
       portraits_.insert({u8"", nullptr});
       portrait_menu_thumbnails_.insert({u8"", nullptr});
+      portrait_marker_thumbnails_.insert({u8"", nullptr});
+    }
+
+    if (morph_pad_view_) {
+      std::vector<SharedPointer<CBitmap>> marker_bitmaps;
+      std::vector<std::string> voice_names;
+      marker_bitmaps.reserve(static_cast<size_t>(voice_count));
+      voice_names.reserve(static_cast<size_t>(voice_count));
+      for (auto i = 0; i < voice_count; ++i) {
+        const auto& path = model_config_->voices[i].portrait.path;
+        if (const auto it = portrait_marker_thumbnails_.find(path);
+            it != portrait_marker_thumbnails_.end()) {
+          marker_bitmaps.push_back(it->second);
+        } else {
+          marker_bitmaps.emplace_back(nullptr);
+        }
+        const auto& name = model_config_->voices[i].name;
+        voice_names.emplace_back(name.begin(), name.end());
+      }
+      morph_pad_view_->SetVoices(marker_bitmaps, voice_names);
     }
 
     voice_menu->setDirty();
+    ApplyVoiceMorphState(
+        common::GetVoiceMorphState(controller->core_.parameter_state_));
     auto voice_id =
         Denormalize(std::get<common::ListParameter>(
                         common::kSchema.GetParameter(ParameterID::kVoice)),
@@ -971,6 +1083,7 @@ void Editor::SyncModelDescription() {
       portrait_view_->setBackground(portraits_.at(voice.portrait.path).get());
       portrait_view_->setVisible(true);
       unloaded_logo_view_->setVisible(false);
+      morph_pad_view_->setVisible(false);
       SetPortraitDescriptionMode(false);
       SetPortraitDescriptionText(voice.portrait.description);
       SetVoiceDescriptionText(voice.description);
@@ -978,10 +1091,12 @@ void Editor::SyncModelDescription() {
     } else {
       portrait_view_->setBackground(nullptr);
       portrait_view_->setVisible(false);
-      unloaded_logo_view_->setVisible(true);
+      unloaded_logo_view_->setVisible(false);
+      morph_pad_view_->setVisible(true);
       SetPortraitDescriptionMode(true);
       SetPortraitDescriptionText(u8"");
       SetVoiceSelectorDisplay(-2);
+      UpdateVoiceMorphingDescription();
     }
     SetModelDescriptionText(model_config_->model.description);
     RebuildVoiceMenu();
@@ -991,6 +1106,7 @@ void Editor::SyncModelDescription() {
       portrait_description_pane_->setDirty();
     }
     unloaded_logo_view_->setDirty();
+    morph_pad_view_->setDirty();
   } catch (const std::exception& e) {
     model_selector->setText("<failed to load>");
     SetModelDescriptionText(
@@ -1104,18 +1220,48 @@ void Editor::valueChanged(CControl* const pControl) {
   core.updated_parameters_.clear();
 }
 
-void Editor::controlBeginEdit(CControl* const control) {
-  assert(control);
-  if (control) {
-    static_cast<Controller*>(getController())->beginEdit(control->getTag());
+void Editor::beginEdit(const Steinberg::int32 index) {
+  if (index >= 0) {
+    Steinberg::Vst::VSTGUIEditor::beginEdit(index);
   }
 }
 
-void Editor::controlEndEdit(CControl* const control) {
-  assert(control);
-  if (control) {
-    static_cast<Controller*>(getController())->endEdit(control->getTag());
+void Editor::endEdit(const Steinberg::int32 index) {
+  if (index >= 0) {
+    Steinberg::Vst::VSTGUIEditor::endEdit(index);
   }
+}
+
+void Editor::UpdateVoiceMorphingDescription() {
+  if (!model_config_.has_value() || !morph_pad_view_ ||
+      !morph_pad_view_->isVisible()) {
+    return;
+  }
+  std::u8string str;
+
+  str += u8"[注意 / Caution]";
+  str += u8"\n";
+  str +=
+      u8"Voice Morphing Mode では、未選択の Voice の学習データが\n"
+      u8"変換結果に影響を与えやすくなる可能性があります。\n"
+      u8"意図せぬ声質の類似や権利侵害にご注意ください。\n";
+  str +=
+      u8"In Voice Morphing Mode, the training data of unselected Voices could "
+      u8"be more prone to influencing the conversion results. Please be "
+      u8"mindful of unintended similarities in timbre and possible rights "
+      u8"infringement.\n";
+  str += u8"\n";
+  const auto voice_count = common::GetVoiceCount(*model_config_);
+  const auto weights = voice_morph_state_.CalculateWeights();
+  for (auto i = 0; i < voice_count; ++i) {
+    if (weights[i] >= common::kVoiceMorphWeightThreshold) {
+      str += model_config_->voices[i].name;
+      str += u8"\n";
+      str += model_config_->voices[i].description;
+      str += u8"\n";
+    }
+  }
+  SetVoiceDescriptionText(str);
 }
 
 }  // namespace beatrice::vst

@@ -5,6 +5,7 @@
 
 #include <array>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -17,6 +18,7 @@
 
 // Beatrice
 #include "common/model_config.h"
+#include "common/voice_morph_state.h"
 #include "vst/controls.h"
 
 namespace beatrice::vst {
@@ -26,6 +28,9 @@ static constexpr auto kWindowHeight = 720;
 
 class DescriptionPane;
 class DescriptionPopupView;
+class MorphFalloffSlider;
+class MorphPadController;
+class MorphPadView;
 class VoiceSelectorView;
 
 // NOLINTNEXTLINE(misc-multiple-inheritance)
@@ -42,11 +47,11 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   auto PLUGIN_API open(void* parent, const PlatformType& platformType)
       -> bool SMTG_OVERRIDE;
   void PLUGIN_API close() SMTG_OVERRIDE;
+  void beginEdit(Steinberg::int32 index) SMTG_OVERRIDE;
+  void endEdit(Steinberg::int32 index) SMTG_OVERRIDE;
   void SyncValue(ParamID param_id, float plain_value);
   void SyncStringValue(ParamID param_id, const std::u8string& value);
   void valueChanged(CControl* pControl) SMTG_OVERRIDE;
-  void controlBeginEdit(CControl* control) SMTG_OVERRIDE;
-  void controlEndEdit(CControl* control) SMTG_OVERRIDE;
   // auto notify(CBaseObject* sender,
   //                       const char* message) -> CMessageResult SMTG_OVERRIDE;
 
@@ -68,6 +73,8 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   void ShowDescriptionPopup(const char* title, const std::u8string& text,
                             CRect size);
   void HideDescriptionPopup();
+  void UpdateVoiceMorphingDescription();
+  void ApplyVoiceMorphState(const common::VoiceMorphState& state);
   void PerformParameterEdit(ParamID param_id, ParamValue normalized_value);
   void SendParameterEdit(ParamID param_id, ParamValue normalized_value);
 
@@ -76,10 +83,13 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   CFontRef font_heading_, font_strong_;
   std::optional<common::ModelConfig> model_config_;
 
-  // Portrait 表示
+  // Portrait / morph
   CView* portrait_view_ = nullptr;
   CView* unloaded_logo_view_ = nullptr;
+  std::unique_ptr<MorphPadController> morph_pad_controller_;
+  MorphPadView* morph_pad_view_ = nullptr;
   DescriptionPane* portrait_description_pane_ = nullptr;
+  MorphFalloffSlider* morph_falloff_slider_ = nullptr;
 
   // Model / Voice Description
   DescriptionPane* model_description_pane_ = nullptr;
@@ -100,6 +110,10 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   // Portrait bitmap cache
   std::map<std::u8string, SharedPointer<CBitmap>> portraits_;
   std::map<std::u8string, SharedPointer<CBitmap>> portrait_menu_thumbnails_;
+  std::map<std::u8string, SharedPointer<CBitmap>> portrait_marker_thumbnails_;
+
+  // Morphing parameters
+  common::VoiceMorphState voice_morph_state_;
 };
 
 }  // namespace beatrice::vst

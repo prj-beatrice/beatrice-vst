@@ -170,7 +170,8 @@ const ParameterSchema kSchema = [] {
            u8"Voice"s,
            [] {
              auto v = std::vector<std::u8string>();
-             for (auto i = 0; i < kMaxNSpeakers; ++i) {
+             // +1 は Voice Morphing Mode の分
+             for (auto i = 0; i < kMaxNSpeakers + 1; ++i) {
                const auto i_ascii = std::to_string(i);
                const auto i_u8 = std::u8string(i_ascii.begin(), i_ascii.end());
                v.push_back(u8"ID "s + i_u8);
