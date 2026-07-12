@@ -4,6 +4,7 @@
 #define BEATRICE_VST_CONTROLS_H_
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <utility>
 
@@ -92,6 +93,26 @@ static constexpr auto kDarkColorScheme = ColorScheme{
     .outline = CColor(0x46, 0x36, 0x2e),  // CColor(0x7d, 0x77, 0x87),
                                           // なぜか正しい色にならないので仮置き
     .background = CColor(0x46, 0x36, 0x2e),
+};
+
+class ActionLabel : public CTextLabel {
+ public:
+  ActionLabel(const CRect& size, const UTF8String& text,
+              std::function<void()> action)
+      : CTextLabel(size, text, nullptr, CParamDisplay::kNoFrame),
+        action_(std::move(action)) {}
+
+  auto onMouseDown(CPoint& where, const CButtonState& buttons)
+      -> CMouseEventResult override {
+    if (buttons.isLeftButton() && action_) {
+      action_();
+      return VSTGUI::kMouseEventHandled;
+    }
+    return CTextLabel::onMouseDown(where, buttons);
+  }
+
+ private:
+  std::function<void()> action_;
 };
 
 class MonotoneBitmap : public CBitmap {
