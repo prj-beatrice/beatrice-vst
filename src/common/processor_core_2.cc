@@ -93,10 +93,28 @@ void ProcessorCore2::Process1(const float* const input, float* const output) {
 #else
     // 重みを抽選確率として用いて毎フレームランダムな話者ののものを抽選で選ぶ場合
     // この場合も codebook のサイズは (n_speaker_+1)ではなくて(n_speaker_)で十分
-    // discrete_distribution::param() は内部で std::vector を確保するので
-    // ここでは抽選のみ行い、重み更新は SetSpeakerMorphingWeights 側に置く。
-    auto idx = speaker_morphing_codebook_lottery_(
-        speaker_morphing_codebook_lottery_engine_);
+    const auto n_weights = std::min(n_speakers_, kSphAvgMaxNSpeakers);
+    auto weight_sum = 0.0f;
+    for (auto i = 0; i < n_weights; ++i) {
+      weight_sum += speaker_morphing_weights_pruned_
+          [speaker_morphing_weights_argsort_indices_[i]];
+    }
+    auto idx = speaker_morphing_weights_argsort_indices_[0];
+    if (weight_sum <= std::numeric_limits<float>::epsilon()) {
+      idx = std::uniform_int_distribution<int>(
+          0, n_speakers_ - 1)(speaker_morphing_codebook_lottery_engine_);
+    } else {
+      auto random_weight = std::uniform_real_distribution<float>(
+          0.0f, weight_sum)(speaker_morphing_codebook_lottery_engine_);
+      for (auto i = 0; i < n_weights; ++i) {
+        const auto speaker_id = speaker_morphing_weights_argsort_indices_[i];
+        random_weight -= speaker_morphing_weights_pruned_[speaker_id];
+        if (random_weight < 0.0f) {
+          idx = speaker_id;
+          break;
+        }
+      }
+    }
     Beatrice20rc0_SetCodebook(
         phone_context_,
         codebooks_.data() + idx * (BEATRICE_20RC0_CODEBOOK_SIZE *
@@ -505,20 +523,6 @@ auto ProcessorCore2::ApplySpeakerMorphingWeights() -> ErrorCode {
   for (auto i = 0; i < n_weights; ++i) {
     speaker_morphing_weights_pruned_[indices[i]] = weights[indices[i]];
   }
-
-  // codebook 抽選用の分布を更新する。Process1 内で毎フレーム param() を
-  // 呼ぶと audio スレッドで std::vector を確保することになるため、
-  // 重みが変わるこちら側で更新しておく。
-  auto lottery_weights = speaker_morphing_weights_pruned_;
-  if (std::ranges::none_of(lottery_weights, [](const auto weight) -> bool {
-        return weight > 0.0f;
-      })) {
-    // 全ゼロは抽選分布の前提を満たさないため、一様分布で抽選する。
-    std::fill_n(lottery_weights.begin(), n_speakers_, 1.0f);
-  }
-  speaker_morphing_codebook_lottery_.param(
-      std::discrete_distribution<int>::param_type(lottery_weights.begin(),
-                                                  lottery_weights.end()));
 
   // ここでsph_avg_a_などの重みを更新(sph_avg_.SetWeights())してしまうと、
   // モデル読み込み時に一気にkMaxNSpeakersの数だけ重みが設定されるため処理が重くなるので、

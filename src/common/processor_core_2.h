@@ -143,7 +143,6 @@ class ProcessorCore2 : public ProcessorCoreBase {
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
 #elif 1
   std::mt19937 speaker_morphing_codebook_lottery_engine_;
-  std::discrete_distribution<int> speaker_morphing_codebook_lottery_;
 #endif
   SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS>
       sph_avg_a_;
