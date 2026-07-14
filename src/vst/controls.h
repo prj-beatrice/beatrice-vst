@@ -193,6 +193,22 @@ class Slider : public CHorizontalSlider {
     return fine_wheel_inc_;
   }
 
+  void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override {
+    if (event.buttonState.isLeft() && event.clickCount == 2) {
+      if (getValue() != getDefaultValue()) {
+        beginEdit();
+        setValue(getDefaultValue());
+        valueChanged();
+        endEdit();
+        setDirty();
+      }
+      event.consumed = true;
+      event.ignoreFollowUpMoveAndUpEvents(true);
+      return;
+    }
+    CHorizontalSlider::onMouseDownEvent(event);
+  }
+
   void onMouseWheelEvent(VSTGUI::MouseWheelEvent& event) override {
     auto distance = isStyleHorizontal() ? event.deltaX : event.deltaY;
     if (distance == 0.0) {
