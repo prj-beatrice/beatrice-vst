@@ -4,8 +4,10 @@
 #define BEATRICE_COMMON_MODEL_CONFIG_H_
 
 #include <array>
+#include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "toml11/single_include/toml.hpp"
 
@@ -43,6 +45,18 @@ struct ModelConfig {
   };
   std::array<Voice, kMaxNSpeakers> voices;
 };
+
+[[nodiscard]] inline auto GetVoiceCount(const ModelConfig& model_config)
+    -> int {
+  for (auto i = 0; i < kMaxNSpeakers; ++i) {
+    const auto& voice = model_config.voices[i];
+    if (voice.name.empty() && voice.description.empty() &&
+        voice.portrait.path.empty() && voice.portrait.description.empty()) {
+      return i;
+    }
+  }
+  return kMaxNSpeakers;
+}
 }  // namespace beatrice::common
 
 namespace toml {
@@ -73,11 +87,17 @@ template <>
 struct from<ModelConfig::Voice> {
   // NOLINTNEXTLINE(readability-identifier-naming)
   static auto from_toml(const value& v) -> ModelConfig::Voice {
-    return ModelConfig::Voice{
+    const auto voice = ModelConfig::Voice{
         .name = find<std::u8string>(v, "name"),
         .description = find<std::u8string>(v, "description"),
         .average_pitch = find<double>(v, "average_pitch"),
         .portrait = get<ModelConfig::Voice::Portrait>(find(v, "portrait"))};
+    if (!std::isfinite(voice.average_pitch) || voice.average_pitch < 0.0 ||
+        voice.average_pitch > 128.0) {
+      throw std::invalid_argument(
+          "average_pitch must be finite and between 0 and 128");
+    }
+    return voice;
   }
 };
 template <>
@@ -86,15 +106,23 @@ struct from<ModelConfig> {
   static auto from_toml(const value& v) -> ModelConfig {
     auto target_speakers =
         std::array<ModelConfig::Voice, beatrice::common::kMaxNSpeakers>();
-    for (const auto& [key, value] : find<toml::table>(v, "voice")) {
+    const auto& voices = find<toml::table>(v, "voice");
+    for (const auto& [key, value] : voices) {
       const auto id = std::stoi(key);
       if (id < 0 || id >= beatrice::common::kMaxNSpeakers) {
         throw std::out_of_range("speaker id out of range");
       }
       target_speakers[id] = get<ModelConfig::Voice>(value);
     }
-    return ModelConfig{.model = find<ModelConfig::Model>(v, "model"),
-                       .voices = target_speakers};
+    auto model_config =
+        ModelConfig{.model = find<ModelConfig::Model>(v, "model"),
+                    .voices = target_speakers};
+    const auto voice_count = beatrice::common::GetVoiceCount(model_config);
+    if (voice_count == 0 || std::cmp_not_equal(voice_count, voices.size())) {
+      throw std::invalid_argument(
+          "voice ids must start at zero and be contiguous");
+    }
+    return model_config;
   }
 };
 }  // namespace toml

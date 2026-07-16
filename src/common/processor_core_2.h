@@ -46,9 +46,6 @@ class ProcessorCore2 : public ProcessorCoreBase {
         sph_avgs_c_(),
 #else
         speaker_morphing_codebook_lottery_engine_(std::random_device{}()),
-        speaker_morphing_codebook_lottery_(
-            speaker_morphing_weights_pruned_.begin(),
-            speaker_morphing_weights_pruned_.end()),
 #endif
         sph_avgs_k_() {
   }
@@ -85,9 +82,8 @@ class ProcessorCore2 : public ProcessorCoreBase {
   auto SetMinSourcePitch(double /*min_source_pitch*/) -> ErrorCode override;
   auto SetMaxSourcePitch(double /*max_source_pitch*/) -> ErrorCode override;
   auto SetVQNumNeighbors(int /*vq_num_neighbors*/) -> ErrorCode override;
-  auto SetSpeakerMorphingWeight(int /*target_speaker*/,
-                                double /*morphing weight*/
-                                )      // NOLINT(whitespace/parens)
+  auto SetSpeakerMorphingWeights(
+      const std::array<float, kMaxNSpeakers>& /*weights*/)
       -> ErrorCode override;
 
  private:
@@ -147,7 +143,6 @@ class ProcessorCore2 : public ProcessorCoreBase {
   std::array<SphericalAverage<float>, BEATRICE_20RC0_CODEBOOK_SIZE> sph_avgs_c_;
 #elif 1
   std::mt19937 speaker_morphing_codebook_lottery_engine_;
-  std::discrete_distribution<int> speaker_morphing_codebook_lottery_;
 #endif
   SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS>
       sph_avg_a_;
@@ -157,6 +152,7 @@ class ProcessorCore2 : public ProcessorCoreBase {
       sph_avgs_k_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
+  auto ApplySpeakerMorphingWeights() -> ErrorCode;
   void Process1(const float* input, float* output);
 
   // Key-value speaker embedding を 1 ブロック設定する。

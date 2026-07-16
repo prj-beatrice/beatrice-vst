@@ -3,18 +3,24 @@
 #include "vst/controller.h"
 
 #include <algorithm>
+#include <cassert>
+#include <cstring>
+#include <ios>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <variant>
 
+#include "vst3sdk/pluginterfaces/base/fplatform.h"
 #include "vst3sdk/pluginterfaces/base/funknown.h"
 #include "vst3sdk/pluginterfaces/vst/ivstunits.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
+#include "vst3sdk/public.sdk/source/vst/vsteditcontroller.h"
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
 
 // Beatrice
 #include "common/parameter_schema.h"
+#include "common/parameter_state.h"
 #include "vst/parameter.h"
 
 namespace beatrice::vst {
@@ -79,7 +85,9 @@ auto PLUGIN_API Controller::initialize(FUnknown* const context) -> tresult {
   return kResultTrue;
 }
 
-// 状態を読み出す
+// 状態を読み出す。
+// Host 側から初期化時やプリセットロード時に呼ばれる。
+// 不正なファイルパスなども構わず読み込む。
 auto PLUGIN_API Controller::setComponentState(IBStream* const state)
     -> tresult {
   if (state == nullptr) {
@@ -96,10 +104,10 @@ auto PLUGIN_API Controller::setComponentState(IBStream* const state)
   }
   auto iss = std::istringstream(state_string, std::ios::binary);
   common::ParameterState tmp_parameter_state;
-  if (tmp_parameter_state.ReadOrSetDefault(iss, common::kSchema) !=
-      common::ErrorCode::kSuccess) {
-    return kResultFalse;
-  }
+  // Processor 側との整合性を維持するため、
+  // Host から与えられた値はなるべくそのまま保持する。
+  [[maybe_unused]] const auto error_code =
+      tmp_parameter_state.ReadOrSetDefault(iss, common::kSchema);
   for (const auto& [param_id, param] : common::kSchema) {
     const auto vst_param_id = static_cast<ParamID>(param_id);
     const auto& value = tmp_parameter_state.GetValue(param_id);
@@ -114,9 +122,8 @@ auto PLUGIN_API Controller::setComponentState(IBStream* const state)
           Normalize(*list_param, std::get<int>(value));
       setParamNormalized(vst_param_id, normalized_value);
     } else if (std::get_if<common::StringParameter>(&param)) {
-      const auto error_code = SetStringParameter(
-          vst_param_id, *std::get<std::unique_ptr<std::u8string>>(value));
-      assert(error_code == common::ErrorCode::kSuccess);
+      SetStringParameter(vst_param_id,
+                         *std::get<std::unique_ptr<std::u8string>>(value));
     } else {
       assert(false);
     }
@@ -126,7 +133,7 @@ auto PLUGIN_API Controller::setComponentState(IBStream* const state)
 }
 
 auto PLUGIN_API Controller::createView(const char* const name) -> IPlugView* {
-  if (strcmp(name, "editor") == 0) {
+  if (std::strcmp(name, "editor") == 0) {
     auto* const editor = new Editor(this);
     editors_.push_back(editor);
     return editor;
@@ -184,20 +191,15 @@ auto PLUGIN_API Controller::setParamNormalized(
 
 // setParamNormalized の文字列パラメータ版で、Editor から呼ばれる他、
 // Host 側からも初期化時やプリセットロード時に
-// setComponentState を通して呼ばれる
-auto Controller::SetStringParameter(const ParamID vst_param_id,
-                                    const std::u8string& value)
-    -> common::ErrorCode {
+// setComponentState を通して呼ばれる。
+void Controller::SetStringParameter(const ParamID vst_param_id,
+                                    const std::u8string& value) {
   const auto param_id = static_cast<common::ParameterID>(vst_param_id);
-  const auto param =
-      std::get<common::StringParameter>(common::kSchema.GetParameter(param_id));
   core_.parameter_state_.SetValue(param_id, value);
 
   for (auto&& editor : editors_) {
     editor->SyncStringValue(vst_param_id, value);
   }
-
-  return common::ErrorCode::kSuccess;
 }
 
 }  // namespace beatrice::vst

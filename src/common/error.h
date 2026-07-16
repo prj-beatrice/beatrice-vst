@@ -15,6 +15,7 @@ enum class [[nodiscard]] ErrorCode : std::uint8_t {
   kFileTooLarge = Beatrice_kFileTooLarge,
   kInvalidFileSize = Beatrice_kInvalidFileSize,
   kTOMLSyntaxError,
+  kInvalidModelConfig,
   kSpeakerIDOutOfRange,
   kInvalidPitchCorrectionType,
   kModelNotLoaded,

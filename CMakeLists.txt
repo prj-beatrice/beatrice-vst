@@ -34,7 +34,7 @@ add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 add_compile_options("$<$<C_COMPILER_ID:MSVC>:/arch:AVX2>")
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/arch:AVX2>")
 
-set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES 0)
+set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES 1)
 set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES 0)
 set(SMTG_ENABLE_VSTGUI_SUPPORT 1)
 
@@ -43,6 +43,10 @@ set(vst3sdk_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/vst3sdk)
 add_subdirectory(lib/vst3sdk)
 
 smtg_enable_vst3_sdk()
+
+if(SMTG_MAC)
+    target_compile_options(vstgui PRIVATE -Wno-error=deprecated-declarations)
+endif()
 
 configure_file(src/vst/metadata.h.in src/vst/metadata.h @ONLY)
 configure_file(resource/Info.plist.in resource/Info.plist @ONLY)
@@ -55,8 +59,10 @@ smtg_add_vst3plugin(${target}
     src/common/processor_core_1.cc
     src/common/processor_core_2.cc
     src/common/processor_proxy.cc
+    src/common/voice_morph_parameter.cc
     src/vst/controller.cc
     src/vst/editor.cc
+    src/vst/editor_morph_controller.cc
     src/vst/factory.cc
     src/vst/parameter.cc
     src/vst/processor.cc

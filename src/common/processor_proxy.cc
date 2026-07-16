@@ -2,6 +2,17 @@
 
 #include "common/processor_proxy.h"
 
+#include <cassert>
+#include <istream>
+#include <memory>
+#include <ostream>
+#include <string>
+#include <variant>
+
+#include "common/error.h"
+#include "common/parameter_schema.h"
+#include "common/parameter_state.h"
+
 namespace beatrice::common {
 
 auto ProcessorProxy::GetParameter(const ParameterID param_id) const -> const

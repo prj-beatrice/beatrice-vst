@@ -65,9 +65,8 @@ class ProcessorCore0 : public ProcessorCoreBase {
       -> ErrorCode override;
   auto SetMinSourcePitch(double /*min_source_pitch*/) -> ErrorCode override;
   auto SetMaxSourcePitch(double /*max_source_pitch*/) -> ErrorCode override;
-  auto SetSpeakerMorphingWeight(int /*target_speaker*/,
-                                double /*morphing weight*/
-                                )      // NOLINT(whitespace/parens)
+  auto SetSpeakerMorphingWeights(
+      const std::array<float, kMaxNSpeakers>& /*weights*/)
       -> ErrorCode override;
 
  private:
@@ -113,6 +112,7 @@ class ProcessorCore0 : public ProcessorCoreBase {
   SphericalAverage<float, BEATRICE_WAVEFORM_GENERATOR_HIDDEN_CHANNELS> sph_avg_;
 
   auto IsLoaded() -> bool { return !model_file_.empty(); }
+  auto ApplySpeakerMorphingWeights() -> ErrorCode;
   void Process1(const float* input, float* output);
 };
 

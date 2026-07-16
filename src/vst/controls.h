@@ -3,11 +3,16 @@
 #ifndef BEATRICE_VST_CONTROLS_H_
 #define BEATRICE_VST_CONTROLS_H_
 
+#include <algorithm>
+#include <charconv>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
+#include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 
-#include "vst3sdk/vstgui4/vstgui/lib/algorithm.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cbitmap.h"
 #include "vst3sdk/vstgui4/vstgui/lib/ccolor.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cdrawcontext.h"
@@ -15,14 +20,11 @@
 #include "vst3sdk/vstgui4/vstgui/lib/cfileselector.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cgraphicspath.h"
-#include "vst3sdk/vstgui4/vstgui/lib/cgraphicstransform.h"
 #include "vst3sdk/vstgui4/vstgui/lib/clinestyle.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cparamdisplay.h"
-#include "vst3sdk/vstgui4/vstgui/lib/controls/cscrollbar.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cslider.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/ctextlabel.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cpoint.h"
-#include "vst3sdk/vstgui4/vstgui/lib/cscrollview.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cstring.h"
 #include "vst3sdk/vstgui4/vstgui/lib/events.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguibase.h"
@@ -36,78 +38,93 @@ using VSTGUI::CColor;
 using VSTGUI::CControl;
 using VSTGUI::CCoord;
 using VSTGUI::CDrawContext;
-using VSTGUI::CDrawStyle;
 using VSTGUI::CFileExtension;
 using VSTGUI::CFontRef;
 using VSTGUI::CGraphicsPath;
-using VSTGUI::CGraphicsTransform;
 using VSTGUI::CHoriTxtAlign;
 using VSTGUI::CHorizontalSlider;
 using VSTGUI::CMessageResult;
 using VSTGUI::CMouseEventResult;
-using VSTGUI::CMultiLineTextLabel;
 using VSTGUI::CNewFileSelector;
 using VSTGUI::CParamDisplay;
 using VSTGUI::CPoint;
 using VSTGUI::CRect;
 using VSTGUI::CTextLabel;
+
+inline constexpr int kSliderKnobWidth = 6;
+using VSTGUI::CView;
 using VSTGUI::IControlListener;
-using VSTGUI::kAliasing;
 using VSTGUI::kAntiAliasing;
-using VSTGUI::kCenterText;
-using VSTGUI::kDrawFilled;
 using VSTGUI::kDrawFilledAndStroked;
-using VSTGUI::kDrawStroked;
 using VSTGUI::kLineSolid;
 using VSTGUI::kMessageNotified;
 using VSTGUI::kTransparentCColor;
-using VSTGUI::plainToNormalized;
 using VSTGUI::SharedPointer;
 using VSTGUI::UTF8String;
 
-struct ColorScheme {
-  CColor surface_0;   // ヘッダー、フッターの背景
-  CColor surface_1;   // 操作部分の背景 (左)
-  CColor surface_2;   // 操作部分の背景 (中央)
-  CColor surface_3;   // 操作部分の背景 (右)
-  CColor on_surface;  // 文字
-  CColor primary;     // 重要なボタン
-  CColor on_primary;  // 文字
-  CColor secondary;
-  CColor secondary_dim;  // つまみ
-  CColor outline;        // 境界線
-  CColor background;     // 背景
+class ChevronView final : public CView {
+ public:
+  ChevronView(const CRect& size, const CColor& color)
+      : CView(size), color_(color) {
+    setMouseEnabled(false);
+  }
+
+  void draw(CDrawContext* const context) override {
+    auto rect = getViewSize();
+    context->saveGlobalState();
+    context->setDrawMode(kAntiAliasing);
+    context->setLineStyle(kLineSolid);
+    context->setLineWidth(1.5);
+    context->setFrameColor(color_);
+    const auto center_y = rect.getCenter().y + 1.0;
+    const auto center_x = rect.getCenter().x;
+    context->drawLine(CPoint(center_x - 4.0, center_y - 2.0),
+                      CPoint(center_x, center_y + 2.0));
+    context->drawLine(CPoint(center_x, center_y + 2.0),
+                      CPoint(center_x + 4.0, center_y - 2.0));
+    context->restoreGlobalState();
+    setDirty(false);
+  }
+
+ private:
+  CColor color_;
 };
 
-static constexpr auto kDarkColorScheme = ColorScheme{
-    .surface_0 = CColor(0x1a, 0x13, 0x14),
-    .surface_1 = CColor(0x26, 0x1d, 0x1e),
-    .surface_2 = CColor(0x2b, 0x22, 0x23),
-    .surface_3 = CColor(0x32, 0x29, 0x2a),
-    .on_surface = CColor(0xff, 0xff, 0xff),
-    .primary = CColor(0xfb, 0xe1, 0x86),
-    .on_primary = CColor(0x1e, 0x1b, 0x13),
-    .secondary = {},
-    .secondary_dim = CColor(0x7d, 0x38, 0x3c),
-    .outline = CColor(0x46, 0x36, 0x2e),  // CColor(0x7d, 0x77, 0x87),
-                                          // なぜか正しい色にならないので仮置き
-    .background = CColor(0x46, 0x36, 0x2e),
+class ActionLabel : public CTextLabel {
+ public:
+  ActionLabel(const CRect& size, const UTF8String& text,
+              std::function<void()> action)
+      : CTextLabel(size, text, nullptr, CParamDisplay::kNoFrame),
+        action_(std::move(action)) {}
+
+  auto onMouseDown(CPoint& where, const CButtonState& buttons)
+      -> CMouseEventResult override {
+    if (buttons.isLeftButton() && action_) {
+      action_();
+      return VSTGUI::kMouseEventHandled;
+    }
+    return CTextLabel::onMouseDown(where, buttons);
+  }
+
+ private:
+  std::function<void()> action_;
 };
 
 class MonotoneBitmap : public CBitmap {
  public:
   MonotoneBitmap(const int width, const int height, const CColor& back_color,
-                 const CColor& frame_color)
+                 const CColor& frame_color, CCoord radius = 0.0)
       : CBitmap(width, height),
         back_color_(back_color),
-        frame_color_(frame_color) {}
+        frame_color_(frame_color),
+        radius_(radius) {}
 
   void draw(  // NOLINT(google-default-arguments)
       CDrawContext* const context, const CRect& rect,
       const CPoint& offset = CPoint(0, 0),
-      const float /*alpha*/ = 1.0F) override {
+      const float /*alpha*/ = 1.0f) override {
     context->setFillColor(back_color_);
-    SharedPointer<CGraphicsPath> path =
+    const SharedPointer<CGraphicsPath> path =
         VSTGUI::owned(context->createGraphicsPath());
     auto frame_rect = rect;
     frame_rect.offset(offset);
@@ -123,7 +140,11 @@ class MonotoneBitmap : public CBitmap {
           frame_rect.inset(0.5, 0.5);
         }
       }
-      path->addRect(frame_rect);
+      if (radius_ > 0.0) {
+        path->addRoundRect(frame_rect, radius_);
+      } else {
+        path->addRect(frame_rect);
+      }
       context->drawGraphicsPath(path, CDrawContext::kPathFilled);
       if (stroke_path) {
         context->setLineStyle(kLineSolid);
@@ -137,6 +158,7 @@ class MonotoneBitmap : public CBitmap {
  private:
   CColor back_color_;
   CColor frame_color_;
+  CCoord radius_;
 };
 
 class Slider : public CHorizontalSlider {
@@ -144,16 +166,22 @@ class Slider : public CHorizontalSlider {
   Slider(const CRect& size, IControlListener* const listener, const int32_t tag,
          const int min_pos, const int max_pos, CBitmap* const handle,
          CBitmap* const background, std::string units, CFontRef font_ref,
-         const int precision = 1)
+         CFontRef value_font_ref, std::string title, const int precision = 1)
       : CHorizontalSlider(size, listener, tag, min_pos, max_pos, handle,
                           background, CPoint(0, 0), CSliderBase::kLeft),
         units_(std::move(units)),
         font_ref_(font_ref),
+        value_font_ref_(value_font_ref),
+        title_(std::move(title)),
         precision_(precision) {
-    font_ref->remember();
+    font_ref_->remember();
+    value_font_ref_->remember();
   }
 
-  ~Slider() override { font_ref_->forget(); }
+  ~Slider() override {
+    font_ref_->forget();
+    value_font_ref_->forget();
+  }
 
   // NOLINTNEXTLINE(readability-identifier-naming)
   void setFineWheelInc(const float fine_wheel_inc) {
@@ -163,6 +191,50 @@ class Slider : public CHorizontalSlider {
   // NOLINTNEXTLINE(readability-identifier-naming)
   [[nodiscard]] auto getFineWheelInc() const -> float {
     return fine_wheel_inc_;
+  }
+
+  void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override {
+    if (event.buttonState.isLeft() && event.clickCount == 2) {
+      if (getValue() != getDefaultValue()) {
+        beginEdit();
+        setValue(getDefaultValue());
+        valueChanged();
+        endEdit();
+        setDirty();
+      }
+      event.consumed = true;
+      event.ignoreFollowUpMoveAndUpEvents(true);
+      return;
+    }
+    CHorizontalSlider::onMouseDownEvent(event);
+  }
+
+  void onMouseWheelEvent(VSTGUI::MouseWheelEvent& event) override {
+    auto distance = isStyleHorizontal() ? event.deltaX : event.deltaY;
+    if (distance == 0.0) {
+      return;
+    }
+
+    onMouseWheelEditing(this);
+    if (isStyleHorizontal()) {
+      distance *= -1.0;
+    }
+    if (isInverseStyle()) {
+      distance *= -1.0;
+    }
+
+    auto plain_value = getValue();
+    const auto increment =
+        buttonStateFromEventModifiers(event.modifiers) & kZoomModifier
+            ? getFineWheelInc()
+            : getWheelInc();
+    plain_value += static_cast<float>(distance) * increment;
+    setValue(plain_value);
+    if (isDirty()) {
+      invalid();
+      valueChanged();
+    }
+    event.consumed = true;
   }
 
   // CSliderBase::onKeyboardEvent がベース
@@ -217,23 +289,15 @@ class Slider : public CHorizontalSlider {
   }
 
   void draw(CDrawContext* const context) override {
-    CHorizontalSlider::draw(context);
-
-    context->saveGlobalState();
-    auto text_rect = getViewSize();
-    // text_rect.inset(textInset.x, textInset.y);
-
-    const auto denormalized_value = getValue();
-
     // 値を文字で表示
     auto value_string = std::string();
-    if (enabled_) {
-      value_string.resize(8);
-      const auto [ptr, ec] =
+    if (IsEnabled()) {
+      value_string.resize(10);
+      const auto result =
           std::to_chars(std::to_address(value_string.begin()),
-                        std::to_address(value_string.end()), denormalized_value,
+                        std::to_address(value_string.end()), getValue(),
                         std::chars_format::fixed, precision_);
-      value_string.resize(ptr - std::to_address(value_string.begin()));
+      value_string.resize(result.ptr - std::to_address(value_string.begin()));
       if (!units_.empty()) {
         value_string += " ";
         value_string += units_;
@@ -242,20 +306,69 @@ class Slider : public CHorizontalSlider {
       value_string = "Disabled";
     }
 
-    const auto antialias = true;
+    auto rect = getViewSize();
 
-    CPoint center(getViewSize().getCenter());
-    CGraphicsTransform transform;
-    transform.rotate(0.0, center);
-    CDrawContext::Transform ctx_transform(*context, transform);
-
+    context->saveGlobalState();
     context->setDrawMode(kAntiAliasing);
     context->setFont(font_ref_);
-    context->setFontColor(kDarkColorScheme.on_surface);
+    context->setFontColor(IsEnabled() ? CColor(0xb8, 0xb5, 0xaf)
+                                      : CColor(0x76, 0x73, 0x6d));
     // getPlatformString の結果を直接渡さないと
     // use-after-free になるので注意
-    context->drawString(UTF8String(value_string).getPlatformString(), text_rect,
-                        kCenterText, antialias);
+    context->drawString(
+        UTF8String(title_).getPlatformString(),
+        CRect(rect.left, rect.top, rect.left + rect.getWidth() * 0.60,
+              rect.top + 18),
+        CHoriTxtAlign::kLeftText, true);
+    context->setFont(value_font_ref_);
+    context->setFontColor(IsEnabled() ? CColor(0xca, 0xc7, 0xc1)
+                                      : CColor(0x76, 0x73, 0x6d));
+    context->drawString(UTF8String(value_string).getPlatformString(),
+                        CRect(rect.left + rect.getWidth() * 0.56, rect.top,
+                              rect.right, rect.top + 18),
+                        CHoriTxtAlign::kRightText, true);
+
+    const auto track_y = rect.top + GetTrackYOffset();
+    const auto left = rect.left;
+    const auto right = rect.right;
+    context->setLineStyle(kLineSolid);
+    context->setLineWidth(3);
+    context->setFrameColor(CColor(0x05, 0x05, 0x05));
+    context->drawLine(CPoint(left, track_y), CPoint(right, track_y));
+    context->setFrameColor(IsEnabled() ? CColor(0xe2, 0xba, 0x79)
+                                       : CColor(0x5b, 0x54, 0x49));
+    const auto norm = (getMax() == getMin())
+                          ? 0.0
+                          : (getValue() - getMin()) / (getMax() - getMin());
+    constexpr auto kKnobHalfWidth = kSliderKnobWidth / 2.0;
+    constexpr auto kKnobFrameInset = 0.5;
+    const auto knob_x = std::clamp(left + (right - left) * norm,
+                                   left + kKnobHalfWidth + kKnobFrameInset,
+                                   right - kKnobHalfWidth - kKnobFrameInset);
+    context->drawLine(CPoint(left, track_y), CPoint(knob_x, track_y));
+    context->setFillColor(IsEnabled() ? CColor(0xc3, 0xa0, 0x66)
+                                      : CColor(0x5b, 0x54, 0x49));
+    auto knob_rect = CRect(knob_x - kKnobHalfWidth, track_y - 8.0,
+                           knob_x + kKnobHalfWidth, track_y + 7.0);
+    context->setFillColor(CColor(0x00, 0x00, 0x00, IsEnabled() ? 0x5c : 0x2c));
+    auto shadow_rect = knob_rect;
+    shadow_rect.offset(0.0, 2.0);
+    if (auto path = VSTGUI::owned(
+            context->createRoundRectGraphicsPath(shadow_rect, 2.0))) {
+      context->drawGraphicsPath(path, CDrawContext::kPathFilled);
+    }
+    context->setFillColor(IsEnabled() ? CColor(0xe2, 0xba, 0x79)
+                                      : CColor(0x5b, 0x54, 0x49));
+    context->setFrameColor(IsEnabled() ? CColor(0xf4, 0xd7, 0x9e, 0x9e)
+                                       : CColor(0x5b, 0x54, 0x49));
+    context->setLineWidth(1);
+    if (auto path = VSTGUI::owned(
+            context->createRoundRectGraphicsPath(knob_rect, 2.0))) {
+      context->drawGraphicsPath(path, CDrawContext::kPathFilled);
+      context->drawGraphicsPath(path, CDrawContext::kPathStroked);
+    } else {
+      context->drawRect(knob_rect, kDrawFilledAndStroked);
+    }
     context->restoreGlobalState();
     setDirty(false);
   }
@@ -278,9 +391,14 @@ class Slider : public CHorizontalSlider {
 
   [[nodiscard]] auto IsEnabled() const -> bool { return enabled_; }
 
+ protected:
+  [[nodiscard]] virtual auto GetTrackYOffset() const -> CCoord { return 33.0; }
+
  private:
   std::string units_;
   CFontRef font_ref_;
+  CFontRef value_font_ref_;
+  std::string title_;
   int precision_;
   float fine_wheel_inc_ = 0.1f;
   bool enabled_ = true;
@@ -305,9 +423,10 @@ class FileSelector : public CTextLabel {
           CNewFileSelector::create(getFrame(), CNewFileSelector::kSelectFile);
       if (selector) {
         selector->addFileExtension(CFileExtension("TOML", "toml"));
-        selector->run([self = VSTGUI::shared(this)](CNewFileSelector* sender) {
-          self->notify(sender, CNewFileSelector::kSelectEndMessage);
-        });
+        selector->run(
+            [self = VSTGUI::shared(this)](CNewFileSelector* sender) -> void {
+              self->notify(sender, CNewFileSelector::kSelectEndMessage);
+            });
         selector->forget();
       }
       return VSTGUI::kMouseEventHandled;
@@ -343,168 +462,12 @@ class FileSelector : public CTextLabel {
     file_ = file;
   }
 
-  auto GetPath() const -> const std::filesystem::path& { return file_; }
+  [[nodiscard]] auto GetPath() const -> const std::filesystem::path& {
+    return file_;
+  }
 
  private:
   std::filesystem::path file_;
-};
-
-class HorizontalLine : public VSTGUI::CView {
- public:
-  HorizontalLine(const CRect& size, const CColor& color,
-                 const CCoord width = 1.0)
-      : CView(size), color_(color), width_(width) {}
-
-  void draw(CDrawContext* const context) override {
-    const auto size = getViewSize();
-    context->saveGlobalState();
-    context->setDrawMode(kAntiAliasing);
-    context->setFrameColor(color_);
-    context->setLineStyle(kLineSolid);
-    context->setLineWidth(width_);
-    context->drawLine(CPoint(size.left, size.top),
-                      CPoint(size.right, size.top));
-    context->restoreGlobalState();
-    setDirty(false);
-  }
-
- protected:
-  CColor color_;
-  CCoord width_;
-};
-
-// model description が空だったら罫線も非表示にする。
-// voice description が空だったら罫線も非表示にする。
-// voice description の位置は model description の大きさに依存する。
-class ModelVoiceDescription : public VSTGUI::CScrollView {
- public:
-  ModelVoiceDescription(const CRect& area, const CFontRef font,
-                        const int element_height, const int element_mergin_y)
-      : VSTGUI::CScrollView(area,
-                            CRect(0, 0, area.getWidth(), area.getHeight()),
-                            VSTGUI::CScrollView::kVerticalScrollbar |
-                                VSTGUI::CScrollView::kDontDrawFrame |
-                                VSTGUI::CScrollView::kOverlayScrollbars),
-        element_height_(element_height),
-        element_mergin_y_(element_mergin_y) {
-    setBackgroundColor(kTransparentCColor);
-    auto scroll_bar = getVerticalScrollbar();
-    scroll_bar->setFrameColor(kDarkColorScheme.outline);
-    scroll_bar->setScrollerColor(kDarkColorScheme.secondary_dim);
-    scroll_bar->setBackgroundColor(kTransparentCColor);
-
-    auto y = 0;
-    horizontal_line_1_ = new HorizontalLine(CRect(0, y, area.getWidth(), y + 1),
-                                            kDarkColorScheme.outline, 1.0);
-    addView(horizontal_line_1_);
-    y += 1 + element_mergin_y;
-
-    model_description_ = new CMultiLineTextLabel(
-        CRect(0, y, area.getWidth(), area.getHeight() - y));
-    model_description_->setFont(font);
-    model_description_->setFontColor(kDarkColorScheme.on_surface);
-    model_description_->setHoriAlign(CHoriTxtAlign::kLeftText);
-    model_description_->setBackColor(kTransparentCColor);
-    model_description_->setAutoHeight(true);
-    model_description_->setStyle(CParamDisplay::kNoFrame);
-    model_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
-    model_description_->setTextInset(CPoint(0, 2));
-    addView(model_description_);
-    y += model_description_->getHeight() + element_mergin_y;
-
-    horizontal_line_2_ = new HorizontalLine(CRect(0, y, area.getWidth(), y + 1),
-                                            kDarkColorScheme.outline, 1.0);
-    addView(horizontal_line_2_);
-    y += 1 + element_mergin_y;
-
-    voice_description_ = new CMultiLineTextLabel(
-        CRect(0, y, area.getWidth(), area.getHeight() - y));
-    voice_description_->setFont(font);
-    voice_description_->setFontColor(kDarkColorScheme.on_surface);
-    voice_description_->setHoriAlign(CHoriTxtAlign::kLeftText);
-    voice_description_->setBackColor(kTransparentCColor);
-    voice_description_->setAutoHeight(true);
-    voice_description_->setStyle(CParamDisplay::kNoFrame);
-    voice_description_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
-    voice_description_->setTextInset(CPoint(0, 2));
-    addView(voice_description_);
-
-    AdjustVoiceDescriptionPosition();
-  }
-
-  void SetModelDescription(const std::u8string& description) {
-    if (description.empty()) {
-      model_description_->setText(nullptr);
-      model_description_->setVisible(false);
-      horizontal_line_1_->setVisible(false);
-    } else {
-      model_description_->setText(
-          reinterpret_cast<const char*>(description.c_str()));
-      model_description_->setVisible(true);
-      horizontal_line_1_->setVisible(true);
-    }
-    AdjustVoiceDescriptionPosition();
-  }
-
-  void SetVoiceDescription(const std::u8string& description) {
-    if (description.empty()) {
-      voice_description_->setText(nullptr);
-      voice_description_->setVisible(false);
-      horizontal_line_2_->setVisible(false);
-    } else {
-      voice_description_->setText(
-          reinterpret_cast<const char*>(description.c_str()));
-      voice_description_->setVisible(true);
-      horizontal_line_2_->setVisible(true);
-    }
-    AdjustVoiceDescriptionPosition();
-    Invalid();
-  }
-
-  void Invalid() const {
-    if (auto* const parent_view = getParentView()) {
-      parent_view->invalid();
-    }
-  }
-
- private:
-  int element_height_;
-  int element_mergin_y_;
-  HorizontalLine* horizontal_line_1_ = nullptr;
-  CMultiLineTextLabel* model_description_ = nullptr;
-  HorizontalLine* horizontal_line_2_ = nullptr;
-  CMultiLineTextLabel* voice_description_ = nullptr;
-  friend class Editor;
-
-  void AdjustVoiceDescriptionPosition() {
-    auto vsb = getVerticalScrollbar();
-    const auto prev_scroll_pos = vsb->getValue();
-    resetScrollOffset();
-
-    auto y =
-        model_description_->getText() == nullptr
-            ? 0
-            : model_description_->getViewSize().bottom + element_mergin_y_ + 4;
-    const auto area = getViewSize();
-
-    horizontal_line_2_->setViewSize(CRect(0, y, area.getWidth(), y + 1));
-    y += 1 + element_mergin_y_;
-    voice_description_->setViewSize(
-        CRect(0, y, area.getWidth(), y + voice_description_->getHeight()));
-    y += voice_description_->getHeight() + element_mergin_y_;
-    auto container_size = getContainerSize();
-    container_size.setHeight(y);
-    setContainerSize(container_size);
-
-    vsb->setValue(prev_scroll_pos);
-    vsb->bounceValue();
-    vsb->onVisualChange();
-    vsb->invalid();
-    valueChanged(vsb);
-
-    setDirty();
-    Invalid();
-  }
 };
 
 }  // namespace beatrice::vst
