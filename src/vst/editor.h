@@ -31,6 +31,7 @@ class DescriptionPopupView;
 class MorphFalloffSlider;
 class MorphPadController;
 class MorphPadView;
+class VoiceMenuOverlayView;
 class VoiceSelectorView;
 
 // NOLINTNEXTLINE(misc-multiple-inheritance)
@@ -70,6 +71,8 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
   void ToggleVoiceMenu();
   void HideVoiceMenu();
   void RebuildVoiceMenu();
+  void SelectVoice(int voice_id);
+  [[nodiscard]] auto GetVoiceControl() const -> VSTGUI::COptionMenu*;
   void ShowDescriptionPopup(const char* title, const std::u8string& text,
                             CRect size);
   void HideDescriptionPopup();
@@ -97,6 +100,7 @@ class Editor : public Steinberg::Vst::VSTGUIEditor, public IControlListener {
 
   // Voice 選択
   VoiceSelectorView* voice_selector_ = nullptr;
+  VoiceMenuOverlayView* voice_menu_overlay_ = nullptr;
 
   // Description popup
   DescriptionPopupView* description_popup_ = nullptr;

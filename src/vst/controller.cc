@@ -30,11 +30,7 @@ using Steinberg::kResultTrue;
 using Steinberg::Vst::kRootUnitId;
 using Steinberg::Vst::StringListParameter;
 
-Controller::~Controller() {
-  for (auto&& editor : editors_) {
-    editor->forget();
-  }
-}
+Controller::~Controller() = default;
 
 auto PLUGIN_API Controller::initialize(FUnknown* const context) -> tresult {
   const tresult result = EditController::initialize(context);

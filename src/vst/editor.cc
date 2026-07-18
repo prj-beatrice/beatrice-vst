@@ -548,17 +548,17 @@ auto PLUGIN_API Editor::open(void* const parent,
   falloff_handle_bmp->forget();
 
   // Main ページ右
-  auto* voice_panel = add_panel(main_page, CRect(792, 10, 1266, 244));
+  auto* const voice_panel = add_panel(main_page, CRect(792, 10, 1266, 244));
   add_title(voice_panel, CRect(0, 12, 473, 34), "VOICE");
-  auto* voice_menu =
+  auto* const voice_menu =
       add_option_menu(voice_panel, static_cast<ParamID>(ParameterID::kVoice),
                       CRect(16, 40, 458, 98), CColor(0x44, 0x38, 0x22),
                       CColor(0x11, 0x10, 0x0f));
   voice_menu->setMouseEnabled(false);
   voice_menu->setFontColor(kTransparentCColor);
-  voice_selector_ =
-      new VoiceSelectorView(CRect(16, 40, 458, 98), root, voice_menu,
-                            panel_surface, font_, font_bold_);
+  voice_selector_ = new VoiceSelectorView(
+      CRect(16, 40, 458, 98), [this]() -> void { ToggleVoiceMenu(); },
+      font_bold_);
   voice_panel->addView(voice_selector_);
   add_slider(voice_panel, static_cast<ParamID>(ParameterID::kFormantShift),
              CRect(16, 118, 458, 161), 2, 1.0f, 0.5f);
@@ -608,6 +608,12 @@ auto PLUGIN_API Editor::open(void* const parent,
                   static_cast<ParamID>(ParameterID::kPitchCorrectionType),
                   CRect(28, 236, 292, 264));
 
+  // Voice 選択メニュー
+  voice_menu_overlay_ = new VoiceMenuOverlayView(
+      CRect(0, 0, kWindowWidth, kWindowHeight), panel_surface, font_,
+      [this](const int voice_id) -> void { SelectVoice(voice_id); });
+  root->addView(voice_menu_overlay_);
+
   // Description の拡大表示
   description_popup_ = new DescriptionPopupView(
       CRect(0, 0, kWindowWidth, kWindowHeight), panel_surface,
@@ -617,6 +623,7 @@ auto PLUGIN_API Editor::open(void* const parent,
   SelectPage(0);
 
   if (!frame->open(parent)) {
+    close();
     return false;
   }
 
@@ -669,6 +676,7 @@ void PLUGIN_API Editor::close() {
     model_description_pane_ = nullptr;
     voice_description_pane_ = nullptr;
     voice_selector_ = nullptr;
+    voice_menu_overlay_ = nullptr;
     description_popup_ = nullptr;
     model_name_label_ = nullptr;
     page_views_ = {};
@@ -746,21 +754,51 @@ void Editor::SetVoiceSelectorDisplay(const int voice_id) {
 }
 
 void Editor::ToggleVoiceMenu() {
-  if (voice_selector_) {
-    voice_selector_->ToggleMenu(model_config_, portrait_menu_thumbnails_);
+  auto* const voice_control = GetVoiceControl();
+  if (!voice_menu_overlay_ || !voice_control) {
+    return;
   }
+  const auto selected_voice_id =
+      static_cast<int>(std::round(voice_control->getValue()));
+  voice_menu_overlay_->ToggleMenu(model_config_, portrait_menu_thumbnails_,
+                                  selected_voice_id);
 }
 
 void Editor::HideVoiceMenu() {
-  if (voice_selector_) {
-    voice_selector_->HideMenu();
+  if (voice_menu_overlay_) {
+    voice_menu_overlay_->HideMenu();
   }
 }
 
 void Editor::RebuildVoiceMenu() {
-  if (voice_selector_) {
-    voice_selector_->RebuildMenu(model_config_, portrait_menu_thumbnails_);
+  auto* const voice_control = GetVoiceControl();
+  if (!voice_menu_overlay_ || !voice_control) {
+    return;
   }
+  const auto selected_voice_id =
+      static_cast<int>(std::round(voice_control->getValue()));
+  voice_menu_overlay_->RebuildMenu(model_config_, portrait_menu_thumbnails_,
+                                   selected_voice_id);
+}
+
+void Editor::SelectVoice(const int voice_id) {
+  auto* const voice_control = GetVoiceControl();
+  if (!voice_control) {
+    return;
+  }
+  voice_control->beginEdit();
+  voice_control->setValue(static_cast<float>(voice_id));
+  voice_control->valueChanged();
+  voice_control->endEdit();
+}
+
+auto Editor::GetVoiceControl() const -> COptionMenu* {
+  const auto voice_param_id = static_cast<ParamID>(ParameterID::kVoice);
+  const auto it = controls_.find(voice_param_id);
+  if (it == controls_.end()) {
+    return nullptr;
+  }
+  return static_cast<COptionMenu*>(it->second);
 }
 
 void Editor::ShowDescriptionPopup(const char* const title,
@@ -869,7 +907,7 @@ void Editor::SyncValue(const ParamID param_id, const float plain_value) {
       SetVoiceSelectorDisplay(-2);
       UpdateVoiceMorphingDescription();
     }
-    if (voice_selector_ && voice_selector_->IsMenuVisible()) {
+    if (voice_menu_overlay_ && voice_menu_overlay_->IsMenuVisible()) {
       RebuildVoiceMenu();
     }
   } else {
@@ -1183,14 +1221,14 @@ void Editor::valueChanged(CControl* const pControl) {
     }
     controller->SetStringParameter(vst_param_id, file);
     // processor に通知
-    auto* const msg = controller->allocateMessage();
-    msg->setMessageID("param_change");
-    msg->getAttributes()->setBinary("param_id", &vst_param_id,
-                                    sizeof(vst_param_id));
-    msg->getAttributes()->setBinary(
-        "data", file.c_str(), static_cast<Steinberg::uint32>(file.size()));
-    controller->sendMessage(msg);
-    msg->release();
+    if (const auto msg = Steinberg::owned(controller->allocateMessage())) {
+      msg->setMessageID("param_change");
+      msg->getAttributes()->setBinary("param_id", &vst_param_id,
+                                      sizeof(vst_param_id));
+      msg->getAttributes()->setBinary(
+          "data", file.c_str(), static_cast<Steinberg::uint32>(file.size()));
+      controller->sendMessage(msg);
+    }
   } else {
     assert(false);
   }
