@@ -21,6 +21,11 @@ namespace beatrice::common {
 // 不整合な状態では Process() 内で処理を行わないなどの対応が必要。
 class ProcessorCoreBase {
  public:
+  ProcessorCoreBase() = default;
+  ProcessorCoreBase(const ProcessorCoreBase&) = delete;
+  auto operator=(const ProcessorCoreBase&) -> ProcessorCoreBase& = delete;
+  ProcessorCoreBase(ProcessorCoreBase&&) = delete;
+  auto operator=(ProcessorCoreBase&&) -> ProcessorCoreBase& = delete;
   virtual ~ProcessorCoreBase() = default;
   [[nodiscard]] virtual auto GetVersion() const -> int = 0;
   virtual auto Process(const float* input, float* output, int n_samples)
