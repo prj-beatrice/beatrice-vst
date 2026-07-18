@@ -47,7 +47,7 @@ jobs:
           allowlist: prj-beatrice
 
           custom-notsigned-prcomment: |
-            Thank you for your submission, we really appreciate it. Like many open-source projects, we ask that $you sign our [Contributor License Agreement](${input.getPathToDocument()}) before we can accept your contribution.
+            Thank you for your submission, we really appreciate it. Like many open-source projects, we ask that $you sign our [Contributor License Agreement](https://github.com/prj-beatrice/beatrice-vst/blob/main/CLA.txt) before we can accept your contribution.
 
             **Here is the full text of our CLA:**
             ```
