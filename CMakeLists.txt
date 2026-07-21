@@ -61,7 +61,9 @@ smtg_add_vst3plugin(${target}
     src/common/processor_proxy.cc
     src/common/voice_morph_parameter.cc
     src/vst/controller.cc
+    src/vst/description_text_layout.cc
     src/vst/editor.cc
+    src/vst/editor_description.cc
     src/vst/editor_morph_controller.cc
     src/vst/factory.cc
     src/vst/parameter.cc
@@ -94,6 +96,8 @@ target_link_libraries(${target}
 )
 
 if(SMTG_MAC)
+    find_library(CORE_TEXT_FRAMEWORK CoreText REQUIRED)
+    target_link_libraries(${target} PRIVATE ${CORE_TEXT_FRAMEWORK})
     set(platform mac)
     smtg_target_add_plugin_resource(${target} resource/logo.png)
     smtg_target_set_bundle(${target}

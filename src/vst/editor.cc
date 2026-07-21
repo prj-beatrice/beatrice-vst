@@ -89,6 +89,12 @@ namespace BitmapFilter = VSTGUI::BitmapFilter;
 
 namespace {
 
+#if defined(_WIN32)
+constexpr auto kDescriptionFontName = "Meiryo";
+#elif defined(__APPLE__)
+constexpr auto kDescriptionFontName = "Hiragino Sans";
+#endif
+
 auto HasEnvironmentVariable(const char* const name) -> bool {
 #if defined(_WIN32)
   // NOLINTNEXTLINE(misc-include-cleaner)
@@ -216,7 +222,7 @@ Editor::Editor(void* const controller)
     : VSTGUIEditor(controller),
       font_(new CFontDesc("Segoe UI", 14)),
       font_bold_(new CFontDesc("Segoe UI", 14, kBoldFace)),
-      font_description_(new CFontDesc("Meiryo", 12)),
+      font_description_(new CFontDesc(kDescriptionFontName, 12)),
       font_small_(new CFontDesc("Segoe UI", 11)),
       font_heading_(new CFontDesc("Segoe UI", 13, kBoldFace)),
       font_strong_(new CFontDesc("Segoe UI", 16, kBoldFace)),
