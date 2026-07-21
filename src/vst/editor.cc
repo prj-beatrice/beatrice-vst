@@ -10,9 +10,12 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <memory>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <variant>
 #include <vector>
 
@@ -1012,8 +1015,13 @@ void Editor::SyncModelDescription() {
   if (file.empty()) {
     // 初期状態
     return;
-  } else if (!std::filesystem::exists(file) ||
-             !std::filesystem::is_regular_file(file)) {
+  }
+  auto file_error = std::error_code{};
+  auto stream = std::ifstream{};
+  if (std::filesystem::is_regular_file(file, file_error)) {
+    stream.open(file, std::ios::binary);
+  }
+  if (!stream.is_open()) {
     // ファイルが移動して読み込めない場合の分岐だが、
     // モデルを読み込んだ後に GUI を閉じモデルファイルを移動して
     // 再び GUI を開いた場合などには
@@ -1025,7 +1033,10 @@ void Editor::SyncModelDescription() {
     return;
   }
   try {
-    const auto toml_data = toml::parse(file);
+    const auto source_path = file.u8string();
+    const auto source_name = std::string(
+        reinterpret_cast<const char*>(source_path.data()), source_path.size());
+    const auto toml_data = toml::parse(stream, source_name);
     model_config_ = toml::get<common::ModelConfig>(toml_data);
     if (model_config_->model.VersionInt() == -1) {
       SetModelDescriptionText(u8"Error: Unknown model version.");
@@ -1046,8 +1057,8 @@ void Editor::SyncModelDescription() {
           goto load_portrait_succeeded;
         }
         const auto portrait_file = file.parent_path() / voice.portrait.path;
-        if (!std::filesystem::exists(portrait_file) ||
-            !std::filesystem::is_regular_file(portrait_file)) {
+        auto portrait_error = std::error_code{};
+        if (!std::filesystem::is_regular_file(portrait_file, portrait_error)) {
           goto load_portrait_failed;
         }
         const auto platform_bitmap = getPlatformFactory().createBitmapFromPath(
