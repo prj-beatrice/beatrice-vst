@@ -4,11 +4,13 @@
 #define BEATRICE_VST_EDITOR_DESCRIPTION_H_
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
-#include "vst3sdk/vstgui4/vstgui/lib/cbuttonstate.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cdrawdefs.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cparamdisplay.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cscrollbar.h"
@@ -20,14 +22,13 @@
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
+#include "vst/description_text_layout.h"
 #include "vst/surface_texture.h"
 
 namespace beatrice::vst {
 
-using VSTGUI::CButtonState;
 using VSTGUI::CFontRef;
 using VSTGUI::CHoriTxtAlign;
-using VSTGUI::CMouseEventResult;
 using VSTGUI::CMultiLineTextLabel;
 using VSTGUI::CParamDisplay;
 using VSTGUI::CScrollbar;
@@ -36,44 +37,66 @@ using VSTGUI::CTextLabel;
 using VSTGUI::CView;
 using VSTGUI::kDrawFilled;
 
-inline void SetScrollableDescription(CScrollView* const scroll,
-                                     CMultiLineTextLabel* const label,
-                                     const std::u8string& text) {
-  if (!scroll || !label) {
-    return;
-  }
-  const auto viewport = scroll->getViewSize();
-  constexpr auto kTextRightPadding = 6.0;
-  scroll->resetScrollOffset();
-  label->setText(reinterpret_cast<const char*>(text.c_str()));
+class DescriptionTextLabel final : public CMultiLineTextLabel {
+ public:
+  using OpenUrlAction = std::function<void(const std::u8string&)>;
 
-  auto content_width = viewport.getWidth();
-  const auto measure_height = [&]() -> CCoord {
-    const auto text_width = std::max(20.0, content_width - kTextRightPadding);
-    label->setViewSize(CRect(0, 0, text_width, viewport.getHeight()));
-    label->setAutoHeight(true);
-    const auto height = label->getViewSize().getHeight();
-    label->setAutoHeight(false);
-    return height;
+  // DESCRIPTION 本文と URL のクリック処理を持つラベルを生成する。
+  DescriptionTextLabel(const CRect& rect, OpenUrlAction open_url);
+
+  // 折り返し済み本文と URL の表示範囲を設定する。
+  void SetDescriptionLayout(DescriptionTextLayout layout);
+
+  // 本文を描画した後、URL の下線を描画する。
+  void drawRect(CDrawContext* context, const CRect& update_rect) override;
+
+  // URL 上で左ボタンが押されたことを記録する。
+  void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
+
+  // マウス位置に応じて URL 用カーソルを更新する。
+  void onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) override;
+
+  // 同じ URL 上で左ボタンが離された場合に URL を開く。
+  void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
+
+  // クリック追跡が中断された場合に押下状態を解除する。
+  void onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) override;
+
+  // ラベルからマウスが出た場合にカーソルを戻す。
+  void onMouseExitEvent(VSTGUI::MouseExitEvent& event) override;
+
+ private:
+  struct LinkArea {
+    CRect rect;
+    std::size_t link_index = 0;
   };
-  auto content_height = measure_height();
-  if (content_height > viewport.getHeight()) {
-    content_width -= scroll->getScrollbarWidth();
-    content_height = measure_height();
-  }
-  content_height = std::max(viewport.getHeight(), content_height);
-  label->setViewSize(CRect(
-      0, 0, std::max(20.0, content_width - kTextRightPadding), content_height));
-  label->setMouseableArea(label->getViewSize());
-  scroll->setContainerSize(CRect(0, 0, content_width, content_height));
-  scroll->setDirty();
-  label->setDirty();
-}
 
+  // URL の表示範囲を文字幅に対応するクリック領域へ変換する。
+  void RebuildLinkAreas();
+
+  // 指定位置にある URL の添字を返す。
+  [[nodiscard]] auto LinkAt(const CPoint& position) const
+      -> std::optional<std::size_t>;
+
+  // URL 上かどうかに応じてカーソルを切り替える。
+  void UpdateCursor(bool over_link);
+
+  DescriptionTextLayout layout_;
+  std::vector<LinkArea> link_areas_;
+  std::optional<std::size_t> pressed_link_;
+  OpenUrlAction open_url_;
+};
+
+// OS の文字処理で DESCRIPTION 本文を折り返し、スクロール領域へ設定する。
+void SetScrollableDescription(CScrollView* scroll, DescriptionTextLabel* label,
+                              const std::u8string& text);
+
+// DESCRIPTION のスクロールバーへ共通の配色を適用する。
 inline void ApplyScrollbarTheme(CScrollView* const scroll) {
   if (!scroll) {
     return;
   }
+  // 1 本のスクロールバーへ配色と最小寸法を設定する。
   const auto apply = [](CScrollbar* const bar) -> void {
     if (!bar) {
       return;
@@ -90,10 +113,12 @@ inline void ApplyScrollbarTheme(CScrollView* const scroll) {
 
 class DimOverlayView final : public CView {
  public:
+  // 入力を受け取らない背景暗幕を生成する。
   explicit DimOverlayView(const CRect& rect) : CView(rect) {
     setMouseEnabled(false);
   }
 
+  // ポップアップ背面の半透明な暗幕を描画する。
   void draw(CDrawContext* const context) override {
     const auto rect = getViewSize();
     context->saveGlobalState();
@@ -105,40 +130,20 @@ class DimOverlayView final : public CView {
   }
 };
 
-class DescriptionPopupPanel final : public SurfacePanel {
- public:
-  DescriptionPopupPanel(const CRect& rect,
-                        const SharedPointer<SurfaceBitmap>& texture,
-                        const CColor& border, CCoord radius,
-                        std::function<void()> on_exit)
-      : SurfacePanel(rect, texture, border, radius),
-        on_exit_(std::move(on_exit)) {}
-
-  auto onMouseExited(CPoint& where, const CButtonState& buttons)
-      -> CMouseEventResult override {
-    if (on_exit_) {
-      on_exit_();
-      return VSTGUI::kMouseEventHandled;
-    }
-    return SurfacePanel::onMouseExited(where, buttons);
-  }
-
- private:
-  std::function<void()> on_exit_;
-};
-
 class DescriptionPane final : public SurfacePanel {
  public:
   using ExpandAction = std::function<void(
       const char* title, const std::u8string& text, CRect popup_rect)>;
 
+  // タイトルとスクロール本文を持つ DESCRIPTION 欄を生成する。
   DescriptionPane(const CRect& rect,
                   const SharedPointer<SurfaceBitmap>& texture,
                   const CColor& border, CCoord radius, std::string title,
                   const CRect& title_rect, const CRect& scroll_rect,
                   CFontRef title_font, CFontRef body_font,
                   const CColor& title_color, const CColor& body_color,
-                  CRect popup_rect, ExpandAction expand_action)
+                  CRect popup_rect, ExpandAction expand_action,
+                  DescriptionTextLabel::OpenUrlAction open_url)
       : SurfacePanel(rect, texture, border, radius),
         title_(std::move(title)),
         popup_rect_(popup_rect),
@@ -163,18 +168,18 @@ class DescriptionPane final : public SurfacePanel {
     addView(scroll_);
 
     const auto label_width = std::max(20.0, scroll_rect.getWidth() - 10.0);
-    label_ = new CMultiLineTextLabel(
-        CRect(0, 0, label_width, scroll_rect.getHeight()));
+    label_ = new DescriptionTextLabel(
+        CRect(0, 0, label_width, scroll_rect.getHeight()), std::move(open_url));
     label_->setFont(body_font);
     label_->setFontColor(body_color);
     label_->setBackColor(kTransparentCColor);
     label_->setStyle(CParamDisplay::kNoFrame);
     label_->setHoriAlign(CHoriTxtAlign::kLeftText);
-    label_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
-    label_->setMouseEnabled(false);
+    label_->setLineLayout(CMultiLineTextLabel::LineLayout::clip);
     scroll_->addView(label_);
   }
 
+  // DESCRIPTION 欄の左クリック時に拡大表示処理を呼ぶ。
   void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override {
     SurfacePanel::onMouseDownEvent(event);
     if (!event.consumed && body_visible_ && event.buttonState.isLeft()) {
@@ -182,38 +187,35 @@ class DescriptionPane final : public SurfacePanel {
         expand_action_(title_.c_str(), text_, popup_rect_);
       }
       event.consumed = true;
+      event.ignoreFollowUpMoveAndUpEvents(true);
     }
   }
 
+  // DESCRIPTION のタイトルを更新する。
   void SetTitle(std::string title) {
     title_ = std::move(title);
-    if (title_label_) {
-      title_label_->setText(title_.c_str());
-      title_label_->setDirty();
-    }
+    title_label_->setText(title_.c_str());
+    title_label_->setDirty();
   }
 
+  // 本文が変わった場合だけ折り返しを更新する。
   void SetText(const std::u8string& text) {
     if (text_ == text) {
       return;
     }
     text_ = text;
     SetScrollableDescription(scroll_, label_, text_);
+    invalid();
   }
 
+  // DESCRIPTION 本文とスクロール領域の表示状態を切り替える。
   void SetBodyVisible(const bool visible) {
     body_visible_ = visible;
-    if (label_) {
-      label_->setVisible(visible);
-      label_->setDirty();
-    }
-    if (scroll_) {
-      scroll_->setVisible(visible);
-      scroll_->setDirty();
-    }
+    label_->setVisible(visible);
+    label_->setDirty();
+    scroll_->setVisible(visible);
+    scroll_->setDirty();
   }
-
-  [[nodiscard]] auto Text() const -> const std::u8string& { return text_; }
 
  private:
   std::string title_;
@@ -222,25 +224,25 @@ class DescriptionPane final : public SurfacePanel {
   ExpandAction expand_action_;
   CTextLabel* title_label_ = nullptr;
   CScrollView* scroll_ = nullptr;
-  CMultiLineTextLabel* label_ = nullptr;
+  DescriptionTextLabel* label_ = nullptr;
   bool body_visible_ = true;
 };
 
 class DescriptionPopupView final : public CViewContainer {
  public:
+  // DESCRIPTION の拡大表示に使うポップアップを生成する。
   DescriptionPopupView(const CRect& rect,
                        const SharedPointer<SurfaceBitmap>& panel_texture,
                        const CColor& border, CCoord radius, CFontRef title_font,
-                       CFontRef body_font)
+                       CFontRef body_font,
+                       DescriptionTextLabel::OpenUrlAction open_url)
       : CViewContainer(rect) {
     setBackgroundColor(kTransparentCColor);
     setTransparency(true);
 
-    dim_view_ = new DimOverlayView(rect);
-    addView(dim_view_);
+    addView(new DimOverlayView(rect));
 
-    panel_ = new DescriptionPopupPanel(CRect(0, 0, 1, 1), panel_texture, border,
-                                       radius, [this]() -> void { Hide(); });
+    panel_ = new SurfacePanel(CRect(0, 0, 1, 1), panel_texture, border, radius);
     addView(panel_);
 
     title_ = new CTextLabel(CRect(32, 28, 360, 52), "", nullptr,
@@ -261,22 +263,39 @@ class DescriptionPopupView final : public CViewContainer {
     scroll_->setTransparency(true);
     panel_->addView(scroll_);
 
-    text_ = new CMultiLineTextLabel(CRect(0, 0, 570, 188));
+    text_ =
+        new DescriptionTextLabel(CRect(0, 0, 570, 188), std::move(open_url));
     text_->setFont(body_font);
     text_->setFontColor(CColor(0xca, 0xc7, 0xc1));
     text_->setBackColor(kTransparentCColor);
     text_->setStyle(CParamDisplay::kNoFrame);
     text_->setHoriAlign(CHoriTxtAlign::kLeftText);
-    text_->setLineLayout(CMultiLineTextLabel::LineLayout::wrap);
+    text_->setLineLayout(CMultiLineTextLabel::LineLayout::clip);
     scroll_->addView(text_);
 
     setVisible(false);
   }
 
-  void Show(const char* const title, const std::u8string& text, CRect size) {
-    if (!panel_ || !title_ || !text_ || !scroll_) {
+  // パネルの外へマウスが移動した場合にポップアップを閉じる。
+  void onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) override {
+    auto position = event.mousePosition;
+    position -= getViewSize().getTopLeft();
+    if (!panel_->getViewSize().pointInside(position)) {
+      Hide();
+      event.consumed = true;
       return;
     }
+    CViewContainer::onMouseMoveEvent(event);
+  }
+
+  // 表示領域からマウスが出た場合にポップアップを閉じる。
+  void onMouseExitEvent(VSTGUI::MouseExitEvent& event) override {
+    Hide();
+    CViewContainer::onMouseExitEvent(event);
+  }
+
+  // 指定したタイトルと本文でポップアップを表示する。
+  void Show(const char* const title, const std::u8string& text, CRect size) {
     panel_->setViewSize(size);
     panel_->setMouseableArea(size);
     title_->setText(title);
@@ -289,17 +308,17 @@ class DescriptionPopupView final : public CViewContainer {
     invalid();
   }
 
+  // DESCRIPTION ポップアップを非表示にする。
   void Hide() {
     setVisible(false);
     invalid();
   }
 
  private:
-  DimOverlayView* dim_view_ = nullptr;
-  DescriptionPopupPanel* panel_ = nullptr;
+  SurfacePanel* panel_ = nullptr;
   CTextLabel* title_ = nullptr;
   CScrollView* scroll_ = nullptr;
-  CMultiLineTextLabel* text_ = nullptr;
+  DescriptionTextLabel* text_ = nullptr;
 };
 
 }  // namespace beatrice::vst

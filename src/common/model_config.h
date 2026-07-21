@@ -3,6 +3,7 @@
 #ifndef BEATRICE_COMMON_MODEL_CONFIG_H_
 #define BEATRICE_COMMON_MODEL_CONFIG_H_
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <stdexcept>
@@ -57,6 +58,16 @@ struct ModelConfig {
   }
   return kMaxNSpeakers;
 }
+
+// TOML の表示文字列を読み込み、NUL を空白へ置き換える。
+[[nodiscard]] inline auto ReadDisplayText(const toml::value& value,
+                                          const char* const key)
+    -> std::u8string {
+  auto text = toml::find<std::u8string>(value, key);
+  std::ranges::replace(text, u8'\0', u8' ');
+  return text;
+}
+
 }  // namespace beatrice::common
 
 namespace toml {
@@ -69,8 +80,8 @@ struct from<ModelConfig::Model> {
   static auto from_toml(const value& v) -> ModelConfig::Model {
     return ModelConfig::Model{
         .version = find<std::string>(v, "version"),
-        .name = find<std::u8string>(v, "name"),
-        .description = find<std::u8string>(v, "description")};
+        .name = beatrice::common::ReadDisplayText(v, "name"),
+        .description = beatrice::common::ReadDisplayText(v, "description")};
   }
 };
 template <>
@@ -79,7 +90,7 @@ struct from<ModelConfig::Voice::Portrait> {
   static auto from_toml(const value& v) -> ModelConfig::Voice::Portrait {
     return ModelConfig::Voice::Portrait{
         .path = find<std::u8string>(v, "path"),
-        .description = find<std::u8string>(v, "description")};
+        .description = beatrice::common::ReadDisplayText(v, "description")};
   }
 };
 
@@ -88,8 +99,8 @@ struct from<ModelConfig::Voice> {
   // NOLINTNEXTLINE(readability-identifier-naming)
   static auto from_toml(const value& v) -> ModelConfig::Voice {
     const auto voice = ModelConfig::Voice{
-        .name = find<std::u8string>(v, "name"),
-        .description = find<std::u8string>(v, "description"),
+        .name = beatrice::common::ReadDisplayText(v, "name"),
+        .description = beatrice::common::ReadDisplayText(v, "description"),
         .average_pitch = find<double>(v, "average_pitch"),
         .portrait = get<ModelConfig::Voice::Portrait>(find(v, "portrait"))};
     if (!std::isfinite(voice.average_pitch) || voice.average_pitch < 0.0 ||
