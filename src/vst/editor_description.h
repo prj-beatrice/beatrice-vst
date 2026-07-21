@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "vst3sdk/vstgui4/vstgui/lib/cbuttonstate.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cdrawdefs.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cparamdisplay.h"
 #include "vst3sdk/vstgui4/vstgui/lib/controls/cscrollbar.h"
@@ -28,10 +27,8 @@
 
 namespace beatrice::vst {
 
-using VSTGUI::CButtonState;
 using VSTGUI::CFontRef;
 using VSTGUI::CHoriTxtAlign;
-using VSTGUI::CMouseEventResult;
 using VSTGUI::CMultiLineTextLabel;
 using VSTGUI::CParamDisplay;
 using VSTGUI::CScrollbar;
@@ -133,30 +130,6 @@ class DimOverlayView final : public CView {
   }
 };
 
-class DescriptionPopupPanel final : public SurfacePanel {
- public:
-  // マウス退出時の処理を持つポップアップパネルを生成する。
-  DescriptionPopupPanel(const CRect& rect,
-                        const SharedPointer<SurfaceBitmap>& texture,
-                        const CColor& border, CCoord radius,
-                        std::function<void()> on_exit)
-      : SurfacePanel(rect, texture, border, radius),
-        on_exit_(std::move(on_exit)) {}
-
-  // パネルからマウスが出たときに登録済み処理を呼ぶ。
-  auto onMouseExited(CPoint& where, const CButtonState& buttons)
-      -> CMouseEventResult override {
-    if (on_exit_) {
-      on_exit_();
-      return VSTGUI::kMouseEventHandled;
-    }
-    return SurfacePanel::onMouseExited(where, buttons);
-  }
-
- private:
-  std::function<void()> on_exit_;
-};
-
 class DescriptionPane final : public SurfacePanel {
  public:
   using ExpandAction = std::function<void(
@@ -214,6 +187,7 @@ class DescriptionPane final : public SurfacePanel {
         expand_action_(title_.c_str(), text_, popup_rect_);
       }
       event.consumed = true;
+      event.ignoreFollowUpMoveAndUpEvents(true);
     }
   }
 
@@ -268,8 +242,7 @@ class DescriptionPopupView final : public CViewContainer {
 
     addView(new DimOverlayView(rect));
 
-    panel_ = new DescriptionPopupPanel(CRect(0, 0, 1, 1), panel_texture, border,
-                                       radius, [this]() -> void { Hide(); });
+    panel_ = new SurfacePanel(CRect(0, 0, 1, 1), panel_texture, border, radius);
     addView(panel_);
 
     title_ = new CTextLabel(CRect(32, 28, 360, 52), "", nullptr,
@@ -303,6 +276,24 @@ class DescriptionPopupView final : public CViewContainer {
     setVisible(false);
   }
 
+  // パネルの外へマウスが移動した場合にポップアップを閉じる。
+  void onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) override {
+    auto position = event.mousePosition;
+    position -= getViewSize().getTopLeft();
+    if (!panel_->getViewSize().pointInside(position)) {
+      Hide();
+      event.consumed = true;
+      return;
+    }
+    CViewContainer::onMouseMoveEvent(event);
+  }
+
+  // 表示領域からマウスが出た場合にポップアップを閉じる。
+  void onMouseExitEvent(VSTGUI::MouseExitEvent& event) override {
+    Hide();
+    CViewContainer::onMouseExitEvent(event);
+  }
+
   // 指定したタイトルと本文でポップアップを表示する。
   void Show(const char* const title, const std::u8string& text, CRect size) {
     panel_->setViewSize(size);
@@ -324,7 +315,7 @@ class DescriptionPopupView final : public CViewContainer {
   }
 
  private:
-  DescriptionPopupPanel* panel_ = nullptr;
+  SurfacePanel* panel_ = nullptr;
   CTextLabel* title_ = nullptr;
   CScrollView* scroll_ = nullptr;
   DescriptionTextLabel* text_ = nullptr;
