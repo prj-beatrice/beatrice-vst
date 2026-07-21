@@ -4,9 +4,12 @@
 #define BEATRICE_VST_EDITOR_DESCRIPTION_H_
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "vst3sdk/vstgui4/vstgui/lib/cbuttonstate.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cdrawdefs.h"
@@ -20,6 +23,7 @@
 #include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 // Beatrice
+#include "vst/description_text_layout.h"
 #include "vst/surface_texture.h"
 
 namespace beatrice::vst {
@@ -36,8 +40,58 @@ using VSTGUI::CTextLabel;
 using VSTGUI::CView;
 using VSTGUI::kDrawFilled;
 
+class DescriptionTextLabel final : public CMultiLineTextLabel {
+ public:
+  using OpenUrlAction = std::function<void(const std::u8string&)>;
+
+  // DESCRIPTION 本文と URL のクリック処理を持つラベルを生成する。
+  DescriptionTextLabel(const CRect& rect, OpenUrlAction open_url);
+
+  // 折り返し済み本文と URL の表示範囲を設定する。
+  void SetDescriptionLayout(DescriptionTextLayout layout);
+
+  // 本文を描画した後、URL の下線を描画する。
+  void drawRect(CDrawContext* context, const CRect& update_rect) override;
+
+  // URL 上で左ボタンが押されたことを記録する。
+  void onMouseDownEvent(VSTGUI::MouseDownEvent& event) override;
+
+  // マウス位置に応じて URL 用カーソルを更新する。
+  void onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) override;
+
+  // 同じ URL 上で左ボタンが離された場合に URL を開く。
+  void onMouseUpEvent(VSTGUI::MouseUpEvent& event) override;
+
+  // クリック追跡が中断された場合に押下状態を解除する。
+  void onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) override;
+
+  // ラベルからマウスが出た場合にカーソルを戻す。
+  void onMouseExitEvent(VSTGUI::MouseExitEvent& event) override;
+
+ private:
+  struct LinkArea {
+    CRect rect;
+    std::size_t link_index = 0;
+  };
+
+  // URL の表示範囲を文字幅に対応するクリック領域へ変換する。
+  void RebuildLinkAreas();
+
+  // 指定位置にある URL の添字を返す。
+  [[nodiscard]] auto LinkAt(const CPoint& position) const
+      -> std::optional<std::size_t>;
+
+  // URL 上かどうかに応じてカーソルを切り替える。
+  void UpdateCursor(bool over_link);
+
+  DescriptionTextLayout layout_;
+  std::vector<LinkArea> link_areas_;
+  std::optional<std::size_t> pressed_link_;
+  OpenUrlAction open_url_;
+};
+
 // OS の文字処理で DESCRIPTION 本文を折り返し、スクロール領域へ設定する。
-void SetScrollableDescription(CScrollView* scroll, CMultiLineTextLabel* label,
+void SetScrollableDescription(CScrollView* scroll, DescriptionTextLabel* label,
                               const std::u8string& text);
 
 // DESCRIPTION のスクロールバーへ共通の配色を適用する。
@@ -115,7 +169,8 @@ class DescriptionPane final : public SurfacePanel {
                   const CRect& title_rect, const CRect& scroll_rect,
                   CFontRef title_font, CFontRef body_font,
                   const CColor& title_color, const CColor& body_color,
-                  CRect popup_rect, ExpandAction expand_action)
+                  CRect popup_rect, ExpandAction expand_action,
+                  DescriptionTextLabel::OpenUrlAction open_url)
       : SurfacePanel(rect, texture, border, radius),
         title_(std::move(title)),
         popup_rect_(popup_rect),
@@ -140,15 +195,14 @@ class DescriptionPane final : public SurfacePanel {
     addView(scroll_);
 
     const auto label_width = std::max(20.0, scroll_rect.getWidth() - 10.0);
-    label_ = new CMultiLineTextLabel(
-        CRect(0, 0, label_width, scroll_rect.getHeight()));
+    label_ = new DescriptionTextLabel(
+        CRect(0, 0, label_width, scroll_rect.getHeight()), std::move(open_url));
     label_->setFont(body_font);
     label_->setFontColor(body_color);
     label_->setBackColor(kTransparentCColor);
     label_->setStyle(CParamDisplay::kNoFrame);
     label_->setHoriAlign(CHoriTxtAlign::kLeftText);
     label_->setLineLayout(CMultiLineTextLabel::LineLayout::clip);
-    label_->setMouseEnabled(false);
     scroll_->addView(label_);
   }
 
@@ -196,7 +250,7 @@ class DescriptionPane final : public SurfacePanel {
   ExpandAction expand_action_;
   CTextLabel* title_label_ = nullptr;
   CScrollView* scroll_ = nullptr;
-  CMultiLineTextLabel* label_ = nullptr;
+  DescriptionTextLabel* label_ = nullptr;
   bool body_visible_ = true;
 };
 
@@ -206,7 +260,8 @@ class DescriptionPopupView final : public CViewContainer {
   DescriptionPopupView(const CRect& rect,
                        const SharedPointer<SurfaceBitmap>& panel_texture,
                        const CColor& border, CCoord radius, CFontRef title_font,
-                       CFontRef body_font)
+                       CFontRef body_font,
+                       DescriptionTextLabel::OpenUrlAction open_url)
       : CViewContainer(rect) {
     setBackgroundColor(kTransparentCColor);
     setTransparency(true);
@@ -235,7 +290,8 @@ class DescriptionPopupView final : public CViewContainer {
     scroll_->setTransparency(true);
     panel_->addView(scroll_);
 
-    text_ = new CMultiLineTextLabel(CRect(0, 0, 570, 188));
+    text_ =
+        new DescriptionTextLabel(CRect(0, 0, 570, 188), std::move(open_url));
     text_->setFont(body_font);
     text_->setFontColor(CColor(0xca, 0xc7, 0xc1));
     text_->setBackColor(kTransparentCColor);
@@ -271,7 +327,7 @@ class DescriptionPopupView final : public CViewContainer {
   DescriptionPopupPanel* panel_ = nullptr;
   CTextLabel* title_ = nullptr;
   CScrollView* scroll_ = nullptr;
-  CMultiLineTextLabel* text_ = nullptr;
+  DescriptionTextLabel* text_ = nullptr;
 };
 
 }  // namespace beatrice::vst

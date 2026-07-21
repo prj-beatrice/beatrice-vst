@@ -62,6 +62,7 @@ smtg_add_vst3plugin(${target}
     src/common/voice_morph_parameter.cc
     src/vst/controller.cc
     src/vst/description_text_layout.cc
+    src/vst/description_url.cc
     src/vst/editor.cc
     src/vst/editor_description.cc
     src/vst/editor_morph_controller.cc

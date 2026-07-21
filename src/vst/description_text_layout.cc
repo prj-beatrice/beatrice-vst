@@ -7,13 +7,20 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 // Beatrice
 #include "vst/description_text_utf8.h"
+#include "vst/description_url.h"
 
 namespace beatrice::vst {
 namespace {
+
+struct WrappedText {
+  std::u8string text;
+  std::vector<std::size_t> joinable_breaks;
+};
 
 // 行末が昇順の UTF-8 コードポイント境界で、段落末まで達することを確認する。
 [[nodiscard]] auto ValidateLineEnds(const std::vector<std::size_t>& line_ends,
@@ -58,18 +65,19 @@ namespace {
 [[nodiscard]] auto WrapParagraph(const std::u8string_view paragraph,
                                  const double max_width,
                                  const LayoutTextLines& layout_lines)
-    -> std::u8string {
+    -> WrappedText {
   if (paragraph.empty()) {
     return {};
   }
 
   auto line_ends = layout_lines(paragraph, max_width);
   if (!line_ends || !ValidateLineEnds(*line_ends, paragraph)) {
-    return std::u8string(paragraph);
+    return {.text = std::u8string(paragraph)};
   }
 
-  auto result = std::u8string{};
+  auto result = WrappedText{};
   auto line_start = std::size_t{0};
+  auto previous_display_end = std::size_t{0};
   for (auto index = std::size_t{0}; index < line_ends->size(); ++index) {
     const auto line_end = (*line_ends)[index];
     // ソフト改行に使われた空白を次行へ残さない。段落先頭の字下げは保つ。
@@ -81,10 +89,56 @@ namespace {
             ? line_end
             : TrimTrailingSpaces(paragraph, display_start, line_end);
     if (index != 0) {
-      result.push_back(u8'\n');
+      // 空白を除去せず挿入した改行を、URL 検出時に元へ戻せるよう記録する。
+      if (previous_display_end == line_start && display_start == line_start) {
+        result.joinable_breaks.push_back(result.text.size());
+      }
+      result.text.push_back(u8'\n');
     }
-    result.append(paragraph.substr(display_start, display_end - display_start));
+    result.text.append(
+        paragraph.substr(display_start, display_end - display_start));
+    previous_display_end = display_end;
     line_start = line_end;
+  }
+  return result;
+}
+
+// 本文を折り返し、URL の復元に必要なソフト改行位置も返す。
+[[nodiscard]] auto LayoutDescriptionTextCore(
+    const std::u8string_view text, const double max_width,
+    const LayoutTextLines& layout_lines) -> WrappedText {
+  auto result = WrappedText{};
+  if (!layout_lines || !std::isfinite(max_width) || max_width <= 0.0) {
+    result.text = std::u8string(text);
+    return result;
+  }
+
+  auto paragraph_start = std::size_t{0};
+  while (paragraph_start < text.size()) {
+    auto paragraph_end = paragraph_start;
+    while (paragraph_end < text.size() && text[paragraph_end] != u8'\r' &&
+           text[paragraph_end] != u8'\n') {
+      ++paragraph_end;
+    }
+    auto paragraph = WrapParagraph(
+        text.substr(paragraph_start, paragraph_end - paragraph_start),
+        max_width, layout_lines);
+    const auto paragraph_offset = result.text.size();
+    result.text += paragraph.text;
+    for (const auto break_offset : paragraph.joinable_breaks) {
+      result.joinable_breaks.push_back(paragraph_offset + break_offset);
+    }
+    if (paragraph_end == text.size()) {
+      break;
+    }
+
+    result.text.push_back(u8'\n');
+    if (text[paragraph_end] == u8'\r' && paragraph_end + 1 < text.size() &&
+        text[paragraph_end + 1] == u8'\n') {
+      paragraph_start = paragraph_end + 2;
+    } else {
+      paragraph_start = paragraph_end + 1;
+    }
   }
   return result;
 }
@@ -118,35 +172,11 @@ auto BuildUtf16ToUtf8BoundaryMap(const std::u8string_view text)
 auto LayoutDescriptionText(const std::u8string_view text,
                            const double max_width,
                            const LayoutTextLines& layout_lines)
-    -> std::u8string {
-  if (!layout_lines || !std::isfinite(max_width) || max_width <= 0.0) {
-    return std::u8string(text);
-  }
-
-  auto result = std::u8string{};
-  auto paragraph_start = std::size_t{0};
-  while (paragraph_start < text.size()) {
-    auto paragraph_end = paragraph_start;
-    while (paragraph_end < text.size() && text[paragraph_end] != u8'\r' &&
-           text[paragraph_end] != u8'\n') {
-      ++paragraph_end;
-    }
-    result += WrapParagraph(
-        text.substr(paragraph_start, paragraph_end - paragraph_start),
-        max_width, layout_lines);
-    if (paragraph_end == text.size()) {
-      break;
-    }
-
-    result.push_back(u8'\n');
-    if (text[paragraph_end] == u8'\r' && paragraph_end + 1 < text.size() &&
-        text[paragraph_end + 1] == u8'\n') {
-      paragraph_start = paragraph_end + 2;
-    } else {
-      paragraph_start = paragraph_end + 1;
-    }
-  }
-  return result;
+    -> DescriptionTextLayout {
+  auto wrapped = LayoutDescriptionTextCore(text, max_width, layout_lines);
+  auto links = description_url_detail::FindDescriptionLinks(
+      wrapped.text, wrapped.joinable_breaks);
+  return {.text = std::move(wrapped.text), .links = std::move(links)};
 }
 
 }  // namespace beatrice::vst

@@ -25,8 +25,10 @@
 #include "vst3sdk/pluginterfaces/base/fstrdefs.h"
 #include "vst3sdk/pluginterfaces/base/ftypes.h"
 #include "vst3sdk/pluginterfaces/base/funknown.h"
+#include "vst3sdk/pluginterfaces/base/smartpointer.h"
 #include "vst3sdk/pluginterfaces/gui/iplugview.h"
 #include "vst3sdk/pluginterfaces/vst/vsttypes.h"
+#include "vst3sdk/public.sdk/source/common/openurl.h"
 #include "vst3sdk/public.sdk/source/vst/utility/stringconvert.h"
 #include "vst3sdk/public.sdk/source/vst/vstguieditor.h"
 #include "vst3sdk/public.sdk/source/vst/vstparameters.h"
@@ -48,6 +50,7 @@
 #include "common/voice_morph_state.h"
 #include "vst/controller.h"
 #include "vst/controls.h"
+#include "vst/description_url.h"
 #include "vst/editor_description.h"
 #include "vst/editor_morph.h"
 #include "vst/editor_morph_controller.h"
@@ -94,6 +97,15 @@ constexpr auto kDescriptionFontName = "Meiryo";
 #elif defined(__APPLE__)
 constexpr auto kDescriptionFontName = "Hiragino Sans";
 #endif
+
+// DESCRIPTION URL を検証し、既定のブラウザで開く。
+void OpenDescriptionUrl(const std::u8string& url) {
+  if (!IsSafeDescriptionUrl(url)) {
+    return;
+  }
+  static_cast<void>(Steinberg::openURLInDefaultApplication(
+      reinterpret_cast<const char*>(url.c_str())));
+}
 
 auto HasEnvironmentVariable(const char* const name) -> bool {
 #if defined(_WIN32)
@@ -529,7 +541,8 @@ auto PLUGIN_API Editor::open(void* const parent,
       [this](const char* const title, const std::u8string& text,
              const CRect popup_rect) -> void {
         ShowDescriptionPopup(title, text, popup_rect);
-      });
+      },
+      OpenDescriptionUrl);
   main_page->addView(portrait_description_pane_);
 
   const auto falloff_rect = CRect(14, 28, 466, 71);
@@ -582,7 +595,8 @@ auto PLUGIN_API Editor::open(void* const parent,
       [this](const char* const title, const std::u8string& text,
              const CRect popup_rect) -> void {
         ShowDescriptionPopup(title, text, popup_rect);
-      });
+      },
+      OpenDescriptionUrl);
   main_page->addView(model_description_pane_);
 
   voice_description_pane_ = new DescriptionPane(
@@ -593,7 +607,8 @@ auto PLUGIN_API Editor::open(void* const parent,
       [this](const char* const title, const std::u8string& text,
              const CRect popup_rect) -> void {
         ShowDescriptionPopup(title, text, popup_rect);
-      });
+      },
+      OpenDescriptionUrl);
   main_page->addView(voice_description_pane_);
 
   // Tuning ページ
@@ -626,7 +641,8 @@ auto PLUGIN_API Editor::open(void* const parent,
   // Description の拡大表示
   description_popup_ = new DescriptionPopupView(
       CRect(0, 0, kWindowWidth, kWindowHeight), panel_surface,
-      CColor(0xd6, 0xa8, 0x57, 0x2b), 3.0, font_bold_, font_description_);
+      CColor(0xd6, 0xa8, 0x57, 0x2b), 3.0, font_bold_, font_description_,
+      OpenDescriptionUrl);
   root->addView(description_popup_);
 
   SelectPage(0);

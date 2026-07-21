@@ -10,17 +10,25 @@
 #include <string_view>
 #include <vector>
 
+#include "vst/description_url.h"
+
 namespace beatrice::vst {
 
 // 成功時は段落末を含む各行末の UTF-8 バイト位置、失敗時は nullopt とする。
 using TextLineEnds = std::optional<std::vector<std::size_t>>;
 using LayoutTextLines = std::function<TextLineEnds(std::u8string_view, double)>;
 
-// 本文を折り返し、既存の CR、LF、CRLF は '\n' に統一する。
+// 折り返し済み本文と、その本文内で検出した URL。
+struct DescriptionTextLayout {
+  std::u8string text;
+  std::vector<DescriptionLink> links;
+};
+
+// 本文を折り返し、クリック可能な HTTP(S) URL の表示範囲も返す。
 [[nodiscard]] auto LayoutDescriptionText(std::u8string_view text,
                                          double max_width,
                                          const LayoutTextLines& layout_lines)
-    -> std::u8string;
+    -> DescriptionTextLayout;
 
 // UTF-16 の境界を UTF-8 へ変換できないことを表す。
 inline constexpr auto kInvalidUtf8Offset = static_cast<std::size_t>(-1);

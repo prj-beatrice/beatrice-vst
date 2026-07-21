@@ -18,24 +18,31 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #if defined(_WIN32)
 #include <cstdint>
 #elif defined(__APPLE__)
-#include <cmath>
 #include <memory>
-#include <optional>
 #include <type_traits>
 #endif
 
 #include "vst3sdk/vstgui4/vstgui/lib/cfont.h"
+#include "vst3sdk/vstgui4/vstgui/lib/cframe.h"
+#include "vst3sdk/vstgui4/vstgui/lib/controls/ctextlabel.h"
 #include "vst3sdk/vstgui4/vstgui/lib/cstring.h"
+#include "vst3sdk/vstgui4/vstgui/lib/events.h"
+#include "vst3sdk/vstgui4/vstgui/lib/platform/iplatformfont.h"
 #include "vst3sdk/vstgui4/vstgui/lib/vstguibase.h"
+#include "vst3sdk/vstgui4/vstgui/lib/vstguifwd.h"
 
 #if defined(_WIN32)
 #include "vst3sdk/vstgui4/vstgui/lib/platform/win32/comptr.h"
@@ -46,6 +53,7 @@
 
 // Beatrice
 #include "vst/description_text_layout.h"
+#include "vst/surface_texture.h"
 
 namespace beatrice::vst {
 namespace {
@@ -290,7 +298,7 @@ template <typename T>
 [[nodiscard]] auto WrapDescriptionText(std::u8string_view text,
                                        const double max_width,
                                        VSTGUI::CFontDesc* font)
-    -> std::u8string {
+    -> DescriptionTextLayout {
   const auto layout_lines = [font](const std::u8string_view paragraph,
                                    const double width) -> TextLineEnds {
     return LayoutNativeDescriptionLines(paragraph, width, font);
@@ -300,8 +308,187 @@ template <typename T>
 
 }  // namespace
 
+DescriptionTextLabel::DescriptionTextLabel(const CRect& rect,
+                                           OpenUrlAction open_url)
+    : CMultiLineTextLabel(rect), open_url_(std::move(open_url)) {}
+
+void DescriptionTextLabel::SetDescriptionLayout(DescriptionTextLayout layout) {
+  layout_ = std::move(layout);
+  setText(ToVstGuiString(layout_.text));
+  RebuildLinkAreas();
+}
+
+void DescriptionTextLabel::drawRect(CDrawContext* const context,
+                                    const CRect& update_rect) {
+  CMultiLineTextLabel::drawRect(context, update_rect);
+  if (link_areas_.empty()) {
+    return;
+  }
+
+  context->saveGlobalState();
+  context->setDrawMode(kAntiAliasing);
+  context->setFrameColor(getFontColor());
+  context->setLineWidth(1.0);
+  const auto origin = getViewSize().getTopLeft();
+  const auto inset = getTextInset();
+  for (const auto& area : link_areas_) {
+    auto rect = area.rect;
+    rect.offset(origin.x, origin.y);
+    if (rect.rectOverlap(update_rect)) {
+      const auto underline_y = rect.bottom - inset.y - context->getLineWidth();
+      context->drawLine(CPoint(rect.left, underline_y),
+                        CPoint(rect.right, underline_y));
+    }
+  }
+  context->restoreGlobalState();
+}
+
+void DescriptionTextLabel::onMouseDownEvent(VSTGUI::MouseDownEvent& event) {
+  if (!event.consumed && event.buttonState.isLeft()) {
+    pressed_link_ = LinkAt(event.mousePosition);
+    if (pressed_link_) {
+      event.consumed = true;
+      return;
+    }
+  }
+  CMultiLineTextLabel::onMouseDownEvent(event);
+}
+
+void DescriptionTextLabel::onMouseMoveEvent(VSTGUI::MouseMoveEvent& event) {
+  const auto over_link = LinkAt(event.mousePosition).has_value();
+  UpdateCursor(over_link);
+  if (over_link || pressed_link_) {
+    event.consumed = true;
+    return;
+  }
+  CMultiLineTextLabel::onMouseMoveEvent(event);
+}
+
+void DescriptionTextLabel::onMouseUpEvent(VSTGUI::MouseUpEvent& event) {
+  if (!pressed_link_) {
+    CMultiLineTextLabel::onMouseUpEvent(event);
+    return;
+  }
+
+  const auto pressed_link = std::exchange(pressed_link_, std::nullopt);
+  const auto released_link = LinkAt(event.mousePosition);
+  UpdateCursor(released_link.has_value());
+  event.consumed = true;
+  if (released_link != pressed_link) {
+    return;
+  }
+
+  const auto url = layout_.links[*pressed_link].url;
+  const auto open_url = open_url_;
+  open_url(url);
+}
+
+void DescriptionTextLabel::onMouseCancelEvent(VSTGUI::MouseCancelEvent& event) {
+  if (pressed_link_) {
+    pressed_link_.reset();
+    event.consumed = true;
+  }
+}
+
+void DescriptionTextLabel::onMouseExitEvent(VSTGUI::MouseExitEvent& event) {
+  if (auto* const frame = getFrame()) {
+    frame->setCursor(VSTGUI::kCursorDefault);
+  }
+  CMultiLineTextLabel::onMouseExitEvent(event);
+}
+
+void DescriptionTextLabel::RebuildLinkAreas() {
+  pressed_link_.reset();
+  link_areas_.clear();
+  setDirty();
+  auto* const font = getFont();
+  if (!font || layout_.links.empty()) {
+    return;
+  }
+  const auto platform_font = font->getPlatformFont();
+  const auto* const painter = font->getFontPainter();
+  if (!platform_font || !painter) {
+    return;
+  }
+
+  const auto line_height = platform_font->getAscent() +
+                           platform_font->getDescent() +
+                           platform_font->getLeading();
+  if (!std::isfinite(line_height) || line_height <= 0.0) {
+    return;
+  }
+
+  const auto inset = getTextInset();
+  auto line_starts = std::vector<std::size_t>{0};
+  for (auto pos = std::size_t{0}; pos < layout_.text.size(); ++pos) {
+    if (layout_.text[pos] == u8'\n') {
+      line_starts.push_back(pos + 1);
+    }
+  }
+  for (auto link_index = std::size_t{0}; link_index < layout_.links.size();
+       ++link_index) {
+    const auto& link = layout_.links[link_index];
+    for (const auto& fragment : link.fragments) {
+      if (fragment.begin >= fragment.end ||
+          fragment.end > layout_.text.size()) {
+        continue;
+      }
+      const auto next_line =
+          std::ranges::upper_bound(line_starts, fragment.begin);
+      const auto line_index = static_cast<std::size_t>(
+          std::distance(line_starts.begin(), next_line) - 1);
+      const auto line_start = line_starts[line_index];
+      const auto line_end = line_index + 1 < line_starts.size()
+                                ? line_starts[line_index + 1] - 1
+                                : layout_.text.size();
+      if (fragment.end > line_end) {
+        continue;
+      }
+
+      const auto prefix =
+          layout_.text.substr(line_start, fragment.begin - line_start);
+      const auto through_link =
+          layout_.text.substr(line_start, fragment.end - line_start);
+      const auto prefix_string = ToVstGuiString(prefix);
+      const auto through_link_string = ToVstGuiString(through_link);
+      const auto left = painter->getStringWidth(
+          nullptr, prefix_string.getPlatformString(), true);
+      const auto right = painter->getStringWidth(
+          nullptr, through_link_string.getPlatformString(), true);
+      if (!std::isfinite(left) || !std::isfinite(right) || right <= left) {
+        continue;
+      }
+
+      const auto top =
+          inset.y + (static_cast<double>(line_index) * line_height);
+      link_areas_.push_back({.rect = CRect(inset.x + left, top, inset.x + right,
+                                           top + line_height + inset.y),
+                             .link_index = link_index});
+    }
+  }
+}
+
+auto DescriptionTextLabel::LinkAt(const CPoint& position) const
+    -> std::optional<std::size_t> {
+  auto local_position = position;
+  local_position -= getViewSize().getTopLeft();
+  for (const auto& area : link_areas_) {
+    if (area.rect.pointInside(local_position)) {
+      return area.link_index;
+    }
+  }
+  return std::nullopt;
+}
+
+void DescriptionTextLabel::UpdateCursor(const bool over_link) {
+  if (auto* const frame = getFrame()) {
+    frame->setCursor(over_link ? VSTGUI::kCursorPointingHand
+                               : VSTGUI::kCursorDefault);
+  }
+}
+
 void SetScrollableDescription(CScrollView* const scroll,
-                              CMultiLineTextLabel* const label,
+                              DescriptionTextLabel* const label,
                               const std::u8string& text) {
   if (!scroll || !label) {
     return;
@@ -321,9 +508,8 @@ void SetScrollableDescription(CScrollView* const scroll,
     label->setViewSize(CRect(0, 0, text_width, viewport.getHeight()));
     const auto inset = label->getTextInset();
     const auto max_line_width = text_width - (inset.x * 2.0);
-    const auto wrapped =
-        WrapDescriptionText(text, max_line_width, label->getFont());
-    label->setText(ToVstGuiString(wrapped));
+    auto wrapped = WrapDescriptionText(text, max_line_width, label->getFont());
+    label->SetDescriptionLayout(std::move(wrapped));
     label->setAutoHeight(true);
     const auto height = label->getViewSize().getHeight();
     label->setAutoHeight(false);
